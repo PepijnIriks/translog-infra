@@ -114,7 +114,9 @@ ok "Kopia: $(kopia --version 2>/dev/null | head -1)"
 step "3/9 Database 'translog'"
 systemctl enable --now postgresql >/dev/null 2>&1
 sudo -u postgres psql -qtAc "SELECT 1 FROM pg_roles WHERE rolname='portal'" | grep -q 1 \
-  || sudo -u postgres psql -qc "CREATE ROLE portal LOGIN PASSWORD '${PG_PORTAL_PASSWORD}'"
+  || sudo -u postgres psql -qc "CREATE ROLE portal LOGIN"
+# wachtwoord altijd gelijkzetten met $CRED_FILE (ook bij opnieuw draaien)
+sudo -u postgres psql -qc "ALTER ROLE portal WITH LOGIN PASSWORD '${PG_PORTAL_PASSWORD}'"
 sudo -u postgres psql -qtAc "SELECT 1 FROM pg_database WHERE datname='translog'" | grep -q 1 \
   || sudo -u postgres createdb -O portal translog
 sudo -u postgres psql -q -d translog <<'SQL'
@@ -230,7 +232,7 @@ systemctl daemon-reload
 systemctl enable --now translog-portal >/dev/null 2>&1; systemctl restart translog-portal
 nginx -t >/dev/null 2>&1 || fail "nginx-configuratie klopt niet"
 systemctl enable nginx >/dev/null 2>&1; systemctl restart nginx
-sleep 2
+for i in $(seq 1 10); do curl -fs http://127.0.0.1/health >/dev/null && break; sleep 2; done
 curl -fs http://127.0.0.1/health >/dev/null && ok "Portaal draait: http://${APP_IP}/  (health: $(curl -s http://127.0.0.1/health))" \
   || fail "Portaal antwoordt niet. Zie: journalctl -u translog-portal -n 30"
 
