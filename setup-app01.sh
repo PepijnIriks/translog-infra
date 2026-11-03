@@ -263,7 +263,7 @@ EOF
 fi
 printf '%s\n%s\n' "$SMB_PASSWORD" "$SMB_PASSWORD" | smbpasswd -s -a translog >/dev/null
 systemctl enable smbd >/dev/null 2>&1; systemctl restart smbd
-ok "Share \\\\${APP_IP}\\translog met $(find "$SHARE_DIR" -type f | wc -l) bestanden (gebruiker: translog)"
+ok "Share smb://${APP_IP}/translog met $(find "$SHARE_DIR" -type f | wc -l) bestanden (gebruiker: translog)"
 
 # --- 6. kopia-repository -----------------------------------------------------
 step "6/9 Kopia-repository op backup01 (${LOCK_MODE}, ${LOCK_PERIOD})"
