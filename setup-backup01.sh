@@ -115,14 +115,15 @@ cat > "$CONF_DIR/s3.json" <<EOF
     {
       "name": "kopia",
       "credentials": [{ "accessKey": "${KOPIA_KEY}", "secretKey": "${KOPIA_SECRET}" }],
-      "actions": ["Read:${BUCKET}", "List:${BUCKET}", "Write:${BUCKET}"]
+      "actions": ["Read:${BUCKET}", "List:${BUCKET}", "Write:${BUCKET}",
+                  "GetObjectRetention:${BUCKET}", "PutObjectRetention:${BUCKET}"]
     }
   ]
 }
 EOF
 chown seaweedfs:seaweedfs "$CONF_DIR/s3.json"
 chmod 600 "$CONF_DIR/s3.json"
-ok "$CONF_DIR/s3.json geschreven (kopia: alleen ${BUCKET}, geen Admin)"
+ok "$CONF_DIR/s3.json geschreven (kopia: alleen ${BUCKET}, geen Admin; mag object locks verlengen, niet inkorten)"
 
 # --- 4. systemd-service ------------------------------------------------------
 step "4/8 SeaweedFS-service"
@@ -245,6 +246,13 @@ try:
     bad("T2: kopia-sleutel kon object lock AANPASSEN"); errors += 1
 except ClientError as e:
     ok(f"T2: kopia kan object lock niet aanpassen ({e.response['Error']['Code']})")
+try:
+    kopia.put_object_retention(Bucket=b, Key=key, VersionId=vid, Retention={
+        "Mode": "GOVERNANCE",
+        "RetainUntilDate": datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=1)})
+    bad("T2: kopia-sleutel kon de bewaartijd INKORTEN"); errors += 1
+except ClientError as e:
+    ok(f"T2: kopia kan de bewaartijd niet inkorten ({e.response['Error']['Code']})")
 try:
     kopia.delete_bucket(Bucket=b)
     bad("T2: kopia-sleutel kon de bucket WISSEN"); errors += 1
