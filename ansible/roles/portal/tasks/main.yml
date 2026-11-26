@@ -57,8 +57,10 @@
 
 - name: Fill the database (only when it is empty)
   ansible.builtin.shell: |
+    set -e
     n=$(sudo -u postgres psql -d translog -qtAc "SELECT to_regclass('public.zendingen') IS NOT NULL")
-    if [ "$n" != "t" ]; then sudo -u postgres psql -q -d translog -f /opt/translog/seed.sql; echo filled; fi
+    # root reads the file and pipes it in: the postgres user cannot open /opt/translog (home folder, mode 0750)
+    if [ "$n" != "t" ]; then sudo -u postgres psql -q -v ON_ERROR_STOP=1 -d translog < /opt/translog/seed.sql; echo filled; fi
   register: seed
   changed_when: "'filled' in seed.stdout"
 
