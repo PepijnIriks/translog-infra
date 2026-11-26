@@ -175,6 +175,12 @@
     dest: /usr/local/sbin/translog-s3-list
     mode: "0700"
 
+- name: Test E1 - tries to delete or change locked back-ups (all attempts must fail)
+  ansible.builtin.copy:
+    src: lock_test.py
+    dest: /usr/local/sbin/translog-locktest
+    mode: "0700"
+
 # ---- One-time hand-over of the back-up login to app01
 - name: Hand-over script
   ansible.builtin.copy:
