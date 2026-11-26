@@ -149,3 +149,7 @@
           }
       }
   notify: Reload nginx
+
+# Apply the nginx change now, so the portal is reachable while the Kopia role still waits for backup01
+- name: Apply nginx change now
+  ansible.builtin.meta: flush_handlers
