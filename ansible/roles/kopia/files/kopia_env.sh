@@ -10,4 +10,8 @@ AWS_ACCESS_KEY_ID=$(jq -r .access_key /etc/translog/backup.json)
 AWS_SECRET_ACCESS_KEY=$(jq -r .secret_key /etc/translog/backup.json)
 KOPIA_PASSWORD=$(jq -r .repo_password /etc/translog/backup.json)
 KOPIA_CHECK_FOR_UPDATES=false
+# systemd starts the nightly back-up without HOME: point Kopia to root's config explicitly,
+# otherwise it says "repository is not connected"
+HOME=${HOME:-/root}
+KOPIA_CONFIG_PATH=/root/.config/kopia/repository.config
 set +a
