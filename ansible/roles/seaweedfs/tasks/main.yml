@@ -169,6 +169,12 @@
   register: bucket
   changed_when: "'created' in bucket.stdout or 'set' in bucket.stdout"
 
+- name: Read-only overview of the bucket (versions, locks, readable?) - for checks and the demo
+  ansible.builtin.copy:
+    src: s3_list.py
+    dest: /usr/local/sbin/translog-s3-list
+    mode: "0700"
+
 # ---- One-time hand-over of the back-up login to app01
 - name: Hand-over script
   ansible.builtin.copy:
