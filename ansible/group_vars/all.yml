@@ -21,7 +21,7 @@ seaweedfs_data_disk: /dev/vdb
 s3_port: 8333
 handoff_port: 8334                     # one-time hand-over of the back-up login to app01
 backup_bucket: translog-backups
-kopia_prefix: app01/
+kopia_prefix: translog/            # map in de bucket; app01/ is de mislukte eerste poging (SeaweedFS 3.97), staat vast tot 10-12-2026
 object_lock_days: 14                   # E1: back-ups can't be deleted or changed for 14 days
 
 # Back-ups of app01 (Kopia)

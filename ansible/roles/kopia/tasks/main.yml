@@ -59,6 +59,12 @@
   when: handoff is not skipped
   no_log: true
 
+- name: Folder in the bucket that holds the Kopia repository (set in group_vars, kopia_prefix)
+  ansible.builtin.copy:
+    dest: /etc/translog/kopia-prefix
+    content: "{{ kopia_prefix }}\n"
+    mode: "0644"
+
 # ---- Kopia repository on backup01
 - name: Scripts
   ansible.builtin.copy:
