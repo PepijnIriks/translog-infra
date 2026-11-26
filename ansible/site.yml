@@ -1,0 +1,27 @@
+# One playbook for the whole TransLog environment. Each server applies only its own part (--limit <hostname>).
+- name: Basis for every server
+  hosts: all
+  become: true
+  roles:
+    - common
+    - zabbix_agent
+
+- name: backup01 - back-up storage with object lock (SeaweedFS)
+  hosts: backup
+  become: true
+  roles:
+    - seaweedfs
+
+- name: app01 - TransLog portal, database, fileshare and back-ups
+  hosts: productie
+  become: true
+  roles:
+    - portal
+    - kopia
+    - attack_sim
+
+- name: mon01 - monitoring (Zabbix)
+  hosts: beheer
+  become: true
+  roles:
+    - zabbix_server

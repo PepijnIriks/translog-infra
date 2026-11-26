@@ -1,0 +1,5 @@
+# mon01 is the way in: SSH (jump host) and the Zabbix web interface from the Fontys network / VPN
+host_firewall:
+  - {src: "{{ vpn_cidr }}", port: 22}
+  - {src: "{{ vpn_cidr }}", port: 80}
+  - {src: "10.20.0.0/16", port: 10051}     # Zabbix active checks from the agents

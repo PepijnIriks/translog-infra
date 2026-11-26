@@ -1,0 +1,151 @@
+# app01: the TransLog customer portal (Flask + PostgreSQL behind nginx) and the fileshare with test data.
+- name: Packages
+  ansible.builtin.apt:
+    name: [postgresql, nginx, python3-flask, python3-psycopg2, gunicorn, samba, python3-cryptography]
+    state: present
+
+- name: User translog (runs the portal)
+  ansible.builtin.user:
+    name: translog
+    system: true
+    shell: /usr/sbin/nologin
+    home: /opt/translog
+    create_home: true
+
+- name: Settings folder
+  ansible.builtin.file:
+    path: /etc/translog
+    state: directory
+    mode: "0750"
+    owner: root
+    group: translog
+
+- name: Database password (made here, only the first time)
+  ansible.builtin.shell: |
+    f=/etc/translog/portal.env
+    [ -s "$f" ] && exit 0
+    umask 027
+    echo "DB_PASSWORD=$(openssl rand -hex 20)" > "$f"
+    chgrp translog "$f"
+    echo made
+  register: dbpw
+  changed_when: "'made' in dbpw.stdout"
+
+- name: Read the database password
+  ansible.builtin.slurp:
+    src: /etc/translog/portal.env
+  register: portal_env
+  no_log: true
+
+- name: Database user and database
+  ansible.builtin.shell: |
+    set -e
+    pw='{{ (portal_env.content | b64decode).split('=', 1)[1] | trim }}'
+    sudo -u postgres psql -qtAc "SELECT 1 FROM pg_roles WHERE rolname='portal'" | grep -q 1 \
+      || sudo -u postgres psql -qc "CREATE ROLE portal LOGIN PASSWORD '$pw'"
+    sudo -u postgres psql -qtAc "SELECT 1 FROM pg_database WHERE datname='translog'" | grep -q 1 \
+      || { sudo -u postgres psql -qc "CREATE DATABASE translog OWNER portal"; echo created; }
+  register: db
+  changed_when: "'created' in db.stdout"
+  no_log: true
+
+- name: Test data for the database (shipments, customers)
+  ansible.builtin.copy:
+    src: seed.sql
+    dest: /opt/translog/seed.sql
+    mode: "0644"
+
+- name: Fill the database (only when it is empty)
+  ansible.builtin.shell: |
+    n=$(sudo -u postgres psql -d translog -qtAc "SELECT to_regclass('public.zendingen') IS NOT NULL")
+    if [ "$n" != "t" ]; then sudo -u postgres psql -q -d translog -f /opt/translog/seed.sql; echo filled; fi
+  register: seed
+  changed_when: "'filled' in seed.stdout"
+
+# ---- Fileshare with test documents (the attack test script encrypts these)
+- name: Fileshare folder
+  ansible.builtin.file:
+    path: "{{ fileshare_dir }}"
+    state: directory
+    mode: "2775"
+    owner: translog
+    group: translog
+
+- name: Test documents generator
+  ansible.builtin.copy:
+    src: make_testfiles.py
+    dest: /opt/translog/make_testfiles.py
+    mode: "0755"
+
+- name: Fill the fileshare (only when it is empty)
+  ansible.builtin.command: python3 /opt/translog/make_testfiles.py {{ fileshare_dir }}
+  args:
+    creates: "{{ fileshare_dir }}/.testdata"
+
+- name: Fileshare readable for the Zabbix agent (to count changed files)
+  ansible.builtin.command: setfacl -R -m u:zabbix:rX -m d:u:zabbix:rX {{ fileshare_dir }}
+  changed_when: false
+
+- name: Samba share "translog" (users are added by IT with smbpasswd -a <name>)
+  ansible.builtin.blockinfile:
+    path: /etc/samba/smb.conf
+    marker: "# {mark} translog-infra"
+    block: |
+      [translog]
+         path = {{ fileshare_dir }}
+         valid users = @translog
+         read only = no
+         force group = translog
+         create mask = 0664
+         directory mask = 2775
+  notify: Restart smbd
+
+# ---- Portal
+- name: Portal application
+  ansible.builtin.copy:
+    src: portal.py
+    dest: /opt/translog/portal.py
+    mode: "0644"
+  notify: Restart translog-portal
+
+- name: Portal service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/translog-portal.service
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=TransLog customer portal
+      After=postgresql.service
+      [Service]
+      User=translog
+      WorkingDirectory=/opt/translog
+      EnvironmentFile=/etc/translog/portal.env
+      Environment=FILESHARE={{ fileshare_dir }}
+      ExecStart=/usr/bin/gunicorn --workers 3 --bind 127.0.0.1:8000 portal:app
+      Restart=always
+      [Install]
+      WantedBy=multi-user.target
+  notify: Restart translog-portal
+
+- name: Portal runs
+  ansible.builtin.systemd:
+    name: translog-portal
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: nginx in front of the portal
+  ansible.builtin.copy:
+    dest: /etc/nginx/sites-available/default
+    mode: "0644"
+    content: |
+      server {
+          listen 80 default_server;
+          server_name _;
+          location / {
+              proxy_pass http://127.0.0.1:8000;
+              proxy_set_header Host $host;
+              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          }
+      }
+  notify: Reload nginx

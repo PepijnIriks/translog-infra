@@ -1,0 +1,40 @@
+# Zabbix agent 2 on every server. It registers itself on mon01 (auto-registration, metadata "translog"),
+# which links the right templates; no host has to be added by hand (E9).
+- name: Zabbix repository
+  ansible.builtin.apt:
+    deb: "https://repo.zabbix.com/zabbix/{{ zabbix_version }}/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest_{{ zabbix_version }}+ubuntu{{ ansible_distribution_version }}_all.deb"
+    state: present
+  register: zbx_repo
+
+- name: Zabbix agent 2
+  ansible.builtin.apt:
+    name: zabbix-agent2
+    state: present
+    update_cache: "{{ zbx_repo.changed }}"
+
+- name: Agent settings
+  ansible.builtin.copy:
+    dest: /etc/zabbix/zabbix_agent2.d/10-translog.conf
+    mode: "0644"
+    content: |
+      # Managed by translog-infra
+      Server={{ mon01_ip }}
+      ServerActive={{ mon01_ip }}
+      Hostname={{ inventory_hostname }}
+      HostMetadata=translog {{ group_names | join(' ') }}
+      RefreshActiveChecks=60
+  notify: Restart zabbix-agent2
+
+- name: Remove the default Server/Hostname lines (the settings above are used instead)
+  ansible.builtin.lineinfile:
+    path: /etc/zabbix/zabbix_agent2.conf
+    regexp: "^{{ item }}="
+    state: absent
+  loop: [Server, ServerActive, Hostname]
+  notify: Restart zabbix-agent2
+
+- name: Agent runs
+  ansible.builtin.systemd:
+    name: zabbix-agent2
+    enabled: true
+    state: started

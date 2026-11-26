@@ -1,0 +1,7 @@
+# app01: test script that imitates a ransomware attack (MITRE ATT&CK T1490 + T1486) on the test data only.
+- name: Attack test script
+  ansible.builtin.copy:
+    src: attack_sim.py
+    dest: /usr/local/sbin/translog-attack-sim
+    mode: "0700"
+    owner: root

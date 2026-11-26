@@ -1,0 +1,213 @@
+# backup01: S3 back-up storage with object lock (SeaweedFS) on the 50 GB data disk.
+# Back-ups in the bucket can't be deleted or changed for {{ object_lock_days }} days, by nobody (COMPLIANCE mode) - E1.
+# The S3 logins and the Kopia repository password are made HERE, on first run, and never leave this server
+# except once to app01 through the hand-over service (port {{ handoff_port }}).
+
+# ---- Data disk
+- name: Is the data disk formatted?
+  ansible.builtin.command: blkid -s TYPE -o value {{ seaweedfs_data_disk }}
+  register: disk_fs
+  failed_when: false
+  changed_when: false
+
+- name: Format the data disk (only when it is empty)
+  ansible.builtin.command: mkfs.ext4 -q -L seaweed {{ seaweedfs_data_disk }}
+  when: disk_fs.stdout == ""
+
+- name: Mount point
+  ansible.builtin.file:
+    path: "{{ seaweedfs_dir }}"
+    state: directory
+    mode: "0750"
+
+- name: Mount the data disk at boot
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    line: "LABEL=seaweed {{ seaweedfs_dir }} ext4 defaults,nofail 0 2"
+    regexp: "^LABEL=seaweed "
+
+- name: Mount now
+  ansible.builtin.command: mount -a
+  changed_when: false
+
+# ---- SeaweedFS program
+- name: User seaweed
+  ansible.builtin.user:
+    name: seaweed
+    system: true
+    shell: /usr/sbin/nologin
+    home: "{{ seaweedfs_dir }}"
+    create_home: false
+
+- name: Owner of the storage
+  ansible.builtin.file:
+    path: "{{ seaweedfs_dir }}"
+    owner: seaweed
+    group: seaweed
+    mode: "0750"
+
+- name: Which SeaweedFS version is installed?
+  ansible.builtin.command: /usr/local/bin/weed version
+  register: weed_version
+  failed_when: false
+  changed_when: false
+
+- name: Download SeaweedFS {{ seaweedfs_version }}
+  ansible.builtin.unarchive:
+    src: "https://github.com/seaweedfs/seaweedfs/releases/download/{{ seaweedfs_version }}/linux_amd64.tar.gz"
+    dest: /usr/local/bin
+    remote_src: true
+    mode: "0755"
+  when: seaweedfs_version not in weed_version.stdout
+  notify: Restart seaweedfs
+
+- name: Python S3 client (for the bucket set-up and the hand-over)
+  ansible.builtin.apt:
+    name: [python3-boto3]
+    state: present
+
+# ---- Secrets, made on this server
+- name: Secrets folder
+  ansible.builtin.file:
+    path: /etc/seaweedfs
+    state: directory
+    mode: "0700"
+    owner: root
+
+- name: Make the S3 logins and the Kopia repository password (only the first time)
+  ansible.builtin.shell: |
+    set -e
+    f=/etc/seaweedfs/secrets.env
+    [ -s "$f" ] && exit 0
+    umask 077
+    {
+      echo "ADMIN_KEY=admin$(openssl rand -hex 8)"
+      echo "ADMIN_SECRET=$(openssl rand -hex 24)"
+      echo "KOPIA_KEY=kopia$(openssl rand -hex 8)"
+      echo "KOPIA_SECRET=$(openssl rand -hex 24)"
+      echo "KOPIA_REPO_PASSWORD=$(openssl rand -hex 24)"
+    } > "$f"
+    echo made
+  register: secrets_made
+  changed_when: "'made' in secrets_made.stdout"
+
+- name: Read the secrets
+  ansible.builtin.slurp:
+    src: /etc/seaweedfs/secrets.env
+  register: secrets_raw
+  no_log: true
+
+- name: Secrets as variables
+  ansible.builtin.set_fact:
+    sw: "{{ dict((secrets_raw.content | b64decode).splitlines() | select('match', '^[A-Z_]+=') | map('split', '=')) }}"
+  no_log: true
+
+- name: S3 accounts - admin (only used on backup01) and kopia (app01; may NOT change the bucket or its lock)
+  ansible.builtin.copy:
+    dest: /etc/seaweedfs/s3.json
+    owner: seaweed
+    mode: "0600"
+    content: "{{ s3_config | to_nice_json }}"
+  vars:
+    s3_config:
+      identities:
+        - name: admin
+          credentials: [{accessKey: "{{ sw.ADMIN_KEY }}", secretKey: "{{ sw.ADMIN_SECRET }}"}]
+          actions: [Admin, Read, List, Tagging, Write]
+        - name: kopia
+          credentials: [{accessKey: "{{ sw.KOPIA_KEY }}", secretKey: "{{ sw.KOPIA_SECRET }}"}]
+          actions:
+            - "Read:{{ backup_bucket }}"
+            - "Write:{{ backup_bucket }}"
+            - "List:{{ backup_bucket }}"
+            - "Tagging:{{ backup_bucket }}"
+            - "GetObjectRetention:{{ backup_bucket }}"     # Kopia sets and EXTENDS locks;
+            - "PutObjectRetention:{{ backup_bucket }}"     # shortening them is refused (COMPLIANCE)
+  no_log: true
+  notify: Restart seaweedfs
+
+# ---- Service
+- name: seaweedfs service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/seaweedfs.service
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=SeaweedFS - S3 back-up storage with object lock
+      After=network-online.target {{ seaweedfs_dir | regex_replace('^/', '') | replace('/', '-') }}.mount
+      [Service]
+      User=seaweed
+      ExecStart=/usr/local/bin/weed server -dir={{ seaweedfs_dir }} -ip={{ backup01_ip }} -ip.bind=0.0.0.0 -master.volumeSizeLimitMB=1024 -volume.max=0 -s3 -s3.port={{ s3_port }} -s3.config=/etc/seaweedfs/s3.json
+      Restart=always
+      RestartSec=5
+      LimitNOFILE=65536
+      [Install]
+      WantedBy=multi-user.target
+  notify: Restart seaweedfs
+
+- name: seaweedfs runs
+  ansible.builtin.systemd:
+    name: seaweedfs
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Flush handlers (SeaweedFS must run before the bucket is made)
+  ansible.builtin.meta: flush_handlers
+
+- name: Bucket set-up script
+  ansible.builtin.copy:
+    src: bucket_setup.py
+    dest: /usr/local/sbin/translog-bucket-setup
+    mode: "0700"
+
+- name: Bucket with object lock and default retention (COMPLIANCE, {{ object_lock_days }} days)
+  ansible.builtin.command: >-
+    /usr/local/sbin/translog-bucket-setup --endpoint http://127.0.0.1:{{ s3_port }}
+    --bucket {{ backup_bucket }} --days {{ object_lock_days }}
+  register: bucket
+  changed_when: "'created' in bucket.stdout or 'set' in bucket.stdout"
+
+# ---- One-time hand-over of the back-up login to app01
+- name: Hand-over script
+  ansible.builtin.copy:
+    src: handoff.py
+    dest: /usr/local/sbin/translog-handoff-server
+    mode: "0700"
+
+- name: Hand-over service (gives app01 its login ONCE; start it again for a rebuilt app01)
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/translog-handoff.service
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=TransLog - give app01 its back-up login once (port {{ handoff_port }}, only from {{ productie_cidr }})
+      After=seaweedfs.service
+      [Service]
+      Type=simple
+      ExecStart=/usr/bin/python3 /usr/local/sbin/translog-handoff-server --port {{ handoff_port }} --allow {{ productie_cidr }} --endpoint {{ backup01_ip }}:{{ s3_port }} --bucket {{ backup_bucket }} --days {{ object_lock_days }} --prefix {{ kopia_prefix }}
+      [Install]
+      WantedBy=multi-user.target
+
+- name: Hand-over is only started automatically the very first time
+  ansible.builtin.shell: |
+    if [ ! -f /etc/seaweedfs/handoff-done ]; then systemctl daemon-reload; systemctl start translog-handoff; echo started; fi
+  register: ho
+  changed_when: "'started' in ho.stdout"
+
+- name: Admin command to allow a rebuilt app01 to pick up its login again
+  ansible.builtin.copy:
+    dest: /usr/local/sbin/translog-handoff
+    mode: "0700"
+    content: |
+      #!/usr/bin/env bash
+      # Lets app01 pick up its back-up login ONE more time (after app01 was rebuilt). Usage (root): translog-handoff
+      systemctl start translog-handoff && echo "Waiting for app01 on port {{ handoff_port }} (stops after one hand-over)."
+
+- name: Zabbix check for the storage (free space is checked by the Linux template)
+  ansible.builtin.copy:
+    dest: /etc/zabbix/zabbix_agent2.d/20-seaweedfs.conf
+    mode: "0644"
+    content: |
+      UserParameter=translog.s3.up,curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:{{ s3_port }}/ ; echo
+  notify: Restart zabbix-agent2 (backup01)

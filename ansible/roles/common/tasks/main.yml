@@ -1,0 +1,72 @@
+# Basis for every server: time zone, updates, host firewall and pulling this repository every 30 minutes.
+- name: Time zone
+  ansible.builtin.command: timedatectl set-timezone {{ timezone }}
+  changed_when: false
+
+- name: Basic packages
+  ansible.builtin.apt:
+    name: [curl, ca-certificates, gnupg, ufw, unattended-upgrades, python3, jq, acl]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Security updates install by themselves
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+    mode: "0644"
+
+# ---- Host firewall (on top of the EduCloud network ACLs): only what this server needs
+- name: Firewall - default deny incoming
+  ansible.builtin.command: ufw default deny incoming
+  changed_when: false
+
+- name: Firewall - SSH and Zabbix agent only from the management network (mon01)
+  ansible.builtin.command: "ufw allow from {{ beheer_cidr }} to any port {{ item }} proto tcp"
+  loop: [22, 10050]
+  changed_when: false
+
+- name: Firewall - extra rules for this server
+  ansible.builtin.command: "ufw allow from {{ item.src }} to any port {{ item.port }} proto tcp"
+  loop: "{{ host_firewall | default([]) }}"
+  changed_when: false
+
+- name: Firewall - on
+  ansible.builtin.command: ufw --force enable
+  changed_when: false
+
+# ---- Configuration as code: the server applies the newest version of this repository every 30 minutes
+- name: translog-pull service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/translog-pull.service
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Apply the newest translog-infra from GitHub to this server
+      After=network-online.target
+      [Service]
+      Type=oneshot
+      ExecStart=/bin/bash -c '/opt/translog-infra/bootstrap/run.sh >> /var/log/translog-pull.log 2>&1'
+
+- name: translog-pull timer
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/translog-pull.timer
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Apply translog-infra every 30 minutes
+      [Timer]
+      OnBootSec=10min
+      OnUnitActiveSec=30min
+      RandomizedDelaySec=2min
+      [Install]
+      WantedBy=timers.target
+
+- name: Enable translog-pull timer
+  ansible.builtin.systemd:
+    name: translog-pull.timer
+    enabled: true
+    state: started
+    daemon_reload: true

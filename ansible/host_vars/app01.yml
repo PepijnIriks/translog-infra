@@ -1,0 +1,4 @@
+# app01: the TransLog portal is open for everyone
+host_firewall:
+  - {src: "any", port: 80}
+  - {src: "any", port: 443}

@@ -1,0 +1,14 @@
+- name: Restart zabbix-server
+  ansible.builtin.systemd:
+    name: zabbix-server
+    state: restarted
+
+- name: Reload nginx (mon01)
+  ansible.builtin.systemd:
+    name: nginx
+    state: reloaded
+
+- name: Restart php-fpm
+  ansible.builtin.systemd:
+    name: php8.3-fpm
+    state: restarted

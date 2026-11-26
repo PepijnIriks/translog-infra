@@ -1,0 +1,4 @@
+# backup01: only app01 may store back-ups (S3) and pick up its back-up login once (hand-over)
+host_firewall:
+  - {src: "{{ productie_cidr }}", port: 8333}
+  - {src: "{{ productie_cidr }}", port: 8334}

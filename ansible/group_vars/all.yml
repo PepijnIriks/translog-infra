@@ -1,0 +1,34 @@
+# TransLog test environment in Fontys EduCloud (VPC "translog", 10.20.0.0/16).
+# No passwords or keys in this file (or anywhere in this repository): every server makes its own secrets.
+
+timezone: Europe/Amsterdam
+repo_url: https://github.com/PepijnIriks/translog-infra.git
+repo_branch: main
+
+# Fixed addresses (set when the VM is made in EduCloud)
+app01_ip: 10.20.1.10        # tier "productie"
+mon01_ip: 10.20.2.10        # tier "beheer"
+backup01_ip: 10.20.3.10     # tier "backup"
+productie_cidr: 10.20.1.0/24
+beheer_cidr: 10.20.2.0/24
+backup_cidr: 10.20.3.0/24
+vpn_cidr: 172.16.16.0/20    # EduCloud OpenVPN (laptops)
+
+# Back-up storage with object lock (backup01)
+seaweedfs_version: "3.97"
+seaweedfs_dir: /srv/seaweedfs          # on the 50 GB data disk
+seaweedfs_data_disk: /dev/vdb
+s3_port: 8333
+handoff_port: 8334                     # one-time hand-over of the back-up login to app01
+backup_bucket: translog-backups
+kopia_prefix: app01/
+object_lock_days: 14                   # E1: back-ups can't be deleted or changed for 14 days
+
+# Back-ups of app01 (Kopia)
+backup_time: "01:00"                   # E5: at most 24 h of data loss (EduCloud instance back-up runs at 02:00)
+fileshare_dir: /srv/fileshare
+dbdump_dir: /var/backups/translog
+
+# Monitoring (mon01)
+zabbix_version: "7.0"
+ransomware_threshold: 50               # E12: more than this many changed files in one minute = alarm

@@ -1,0 +1,148 @@
+# app01: nightly back-up of the database and the fileshare with Kopia to backup01 (S3 with object lock).
+# Kopia encrypts everything before it leaves app01 (E3) and gives every object a COMPLIANCE retention (E1).
+- name: Kopia apt key
+  ansible.builtin.shell: |
+    set -e
+    install -d -m 0755 /etc/apt/keyrings
+    [ -s /etc/apt/keyrings/kopia-keyring.gpg ] && exit 0
+    curl -fsSL https://kopia.io/signing-key | gpg --dearmor -o /etc/apt/keyrings/kopia-keyring.gpg
+    echo added
+  register: kopia_key
+  changed_when: "'added' in kopia_key.stdout"
+
+- name: Kopia apt repository
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/kopia.list
+    content: "deb [signed-by=/etc/apt/keyrings/kopia-keyring.gpg] http://packages.kopia.io/apt/ stable main\n"
+    mode: "0644"
+  register: kopia_repo
+
+- name: Kopia and the S3 client
+  ansible.builtin.apt:
+    name: [kopia, python3-boto3]
+    state: present
+    update_cache: "{{ kopia_repo.changed }}"
+
+- name: Folders
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    mode: "{{ item.mode }}"
+  loop:
+    - {path: "{{ dbdump_dir }}", mode: "0700"}
+    - {path: /var/lib/translog, mode: "0755"}
+
+# ---- Back-up login: picked up ONCE from backup01 (never typed in, never in Git)
+- name: Is the back-up login already here?
+  ansible.builtin.stat:
+    path: /etc/translog/backup.json
+  register: backup_login
+
+- name: Back-up login from backup01 (hand-over)
+  ansible.builtin.uri:
+    url: "http://{{ backup01_ip }}:{{ handoff_port }}/"
+    return_content: true
+    timeout: 10
+  register: handoff
+  until: handoff.status == 200
+  retries: 60
+  delay: 30
+  when: not backup_login.stat.exists or backup_login.stat.size == 0
+  no_log: true
+
+- name: Store the back-up login (root only)
+  ansible.builtin.copy:
+    dest: /etc/translog/backup.json
+    content: "{{ handoff.content }}"
+    mode: "0600"
+    owner: root
+  when: handoff is not skipped
+  no_log: true
+
+# ---- Kopia repository on backup01
+- name: Scripts
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "/usr/local/sbin/{{ item.dest }}"
+    mode: "0700"
+  loop:
+    - {src: kopia_env.sh, dest: translog-kopia-env}
+    - {src: backup.sh, dest: translog-backup}
+    - {src: restore.sh, dest: translog-restore}
+
+- name: Connect to the Kopia repository (or make it, with object lock retention)
+  ansible.builtin.shell: |
+    set -e
+    . /usr/local/sbin/translog-kopia-env
+    if kopia repository status >/dev/null 2>&1; then exit 0; fi
+    S3="--bucket=$BUCKET --prefix=$PREFIX --endpoint=$ENDPOINT --disable-tls"
+    if kopia repository connect s3 $S3 >/dev/null 2>&1; then echo connected; exit 0; fi
+    kopia repository create s3 $S3 --retention-mode=COMPLIANCE --retention-period="$(( RETENTION_DAYS * 24 ))h"
+    echo created
+  register: repo
+  changed_when: "'connected' in repo.stdout or 'created' in repo.stdout"
+
+- name: Kopia policy (what to keep, compression) and object locks extended by maintenance
+  ansible.builtin.shell: |
+    set -e
+    . /usr/local/sbin/translog-kopia-env
+    kopia policy set --global --keep-latest 14 --keep-hourly 0 --keep-daily 14 --keep-weekly 8 --keep-monthly 6 --compression zstd >/dev/null
+    kopia maintenance set --owner=root@app01 >/dev/null
+    kopia maintenance set --extend-object-locks true >/dev/null 2>&1 || true
+  changed_when: false
+
+# ---- Nightly back-up
+- name: Back-up service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/translog-backup.service
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=TransLog back-up (database + fileshare) to backup01
+      After=network-online.target postgresql.service
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/sbin/translog-backup
+
+- name: Back-up timer ({{ backup_time }} every night)
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/translog-backup.timer
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=TransLog back-up every night at {{ backup_time }}
+      [Timer]
+      OnCalendar=*-*-* {{ backup_time }}:00
+      Persistent=true
+      [Install]
+      WantedBy=timers.target
+
+- name: Back-up timer on
+  ansible.builtin.systemd:
+    name: translog-backup.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: First back-up right away (when there is none yet)
+  ansible.builtin.shell: |
+    [ -s /var/lib/translog/backup-last-ok ] && exit 0
+    systemctl start translog-backup && echo done
+  register: first
+  changed_when: "'done' in first.stdout"
+
+# ---- Zabbix checks (E11 failed back-up, E12 many changed files)
+- name: Zabbix checks for back-ups and the fileshare
+  ansible.builtin.copy:
+    dest: /etc/zabbix/zabbix_agent2.d/20-translog.conf
+    mode: "0644"
+    content: |
+      # 0 = last back-up OK, anything else = failed (exit code)
+      UserParameter=translog.backup.status,cat /var/lib/translog/backup-status 2>/dev/null || echo 99
+      # time (epoch) of the last successful back-up
+      UserParameter=translog.backup.lastok,cat /var/lib/translog/backup-last-ok 2>/dev/null || echo 0
+      # files in the fileshare changed in the last minute (ransomware changes very many at once)
+      UserParameter=translog.files.changed,find {{ fileshare_dir }} -type f -mmin -1 2>/dev/null | wc -l
+      # files with a ransomware extension
+      UserParameter=translog.files.locked,find {{ fileshare_dir }} -type f -name '*.locked' 2>/dev/null | wc -l
+  notify: Restart zabbix-agent2 (app01)

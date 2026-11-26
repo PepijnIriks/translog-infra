@@ -1,0 +1,12 @@
+#cloud-config
+# User data for mon01 in EduCloud (Instances > Add Instance > Advanced > User Data).
+# Everything else comes from https://github.com/PepijnIriks/translog-infra (no secrets in here).
+hostname: mon01
+timezone: Europe/Amsterdam
+ssh_pwauth: true
+package_update: true
+packages:
+  - git
+  - ansible-core
+runcmd:
+  - [bash, -c, "git clone https://github.com/PepijnIriks/translog-infra.git /opt/translog-infra && bash /opt/translog-infra/bootstrap/run.sh > /var/log/translog-bootstrap.log 2>&1"]

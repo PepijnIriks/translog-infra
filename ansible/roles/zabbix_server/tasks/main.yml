@@ -1,0 +1,144 @@
+# mon01: Zabbix {{ zabbix_version }} server with PostgreSQL and the web interface on port 80.
+# The checks and alarms (templates, triggers, auto-registration) are made by zabbix_setup.py through the
+# Zabbix API, so they are code too. The Admin password is made here and kept in /root/zabbix-admin.txt.
+- name: Packages
+  ansible.builtin.apt:
+    name: [postgresql, zabbix-server-pgsql, zabbix-frontend-php, php8.3-pgsql, zabbix-nginx-conf, zabbix-sql-scripts]
+    state: present
+
+- name: Database password (made here, only the first time)
+  ansible.builtin.shell: |
+    f=/etc/zabbix/db.env
+    [ -s "$f" ] && exit 0
+    umask 077
+    echo "DB_PASSWORD=$(openssl rand -hex 20)" > "$f"
+    echo made
+  register: zdbpw
+  changed_when: "'made' in zdbpw.stdout"
+
+- name: Read the database password
+  ansible.builtin.slurp:
+    src: /etc/zabbix/db.env
+  register: zdb_env
+  no_log: true
+
+- name: Remember it
+  ansible.builtin.set_fact:
+    zabbix_db_password: "{{ (zdb_env.content | b64decode).split('=', 1)[1] | trim }}"
+  no_log: true
+
+- name: Database user and database
+  ansible.builtin.shell: |
+    set -e
+    sudo -u postgres psql -qtAc "SELECT 1 FROM pg_roles WHERE rolname='zabbix'" | grep -q 1 \
+      || sudo -u postgres psql -qc "CREATE ROLE zabbix LOGIN PASSWORD '{{ zabbix_db_password }}'"
+    sudo -u postgres psql -qtAc "SELECT 1 FROM pg_database WHERE datname='zabbix'" | grep -q 1 \
+      || { sudo -u postgres psql -qc "CREATE DATABASE zabbix OWNER zabbix ENCODING 'UTF8' TEMPLATE template0"; echo created; }
+  register: zdb
+  changed_when: "'created' in zdb.stdout"
+  no_log: true
+
+- name: Database tables (only the first time)
+  ansible.builtin.shell: |
+    set -e
+    n=$(sudo -u postgres psql -d zabbix -qtAc "SELECT to_regclass('public.users') IS NOT NULL")
+    [ "$n" = "t" ] && exit 0
+    for f in /usr/share/zabbix/sql-scripts/postgresql/server.sql.gz /usr/share/zabbix-sql-scripts/postgresql/server.sql.gz; do
+      [ -f "$f" ] && break
+    done
+    zcat "$f" | PGPASSWORD='{{ zabbix_db_password }}' psql -q -h 127.0.0.1 -U zabbix zabbix > /dev/null
+    echo imported
+  register: zschema
+  changed_when: "'imported' in zschema.stdout"
+  no_log: true
+
+- name: Zabbix server settings folder
+  ansible.builtin.file:
+    path: /etc/zabbix/zabbix_server.d
+    state: directory
+    mode: "0750"
+    group: zabbix
+
+- name: Zabbix server settings
+  ansible.builtin.copy:
+    dest: /etc/zabbix/zabbix_server.d/10-translog.conf
+    mode: "0640"
+    group: zabbix
+    content: |
+      DBHost=127.0.0.1
+      DBName=zabbix
+      DBUser=zabbix
+      DBPassword={{ zabbix_db_password }}
+  no_log: true
+  notify: Restart zabbix-server
+
+- name: Zabbix server reads the settings folder
+  ansible.builtin.lineinfile:
+    path: /etc/zabbix/zabbix_server.conf
+    regexp: '^Include=/etc/zabbix/zabbix_server.d'
+    line: "Include=/etc/zabbix/zabbix_server.d/*.conf"
+  notify: Restart zabbix-server
+
+- name: Web interface settings (no set-up wizard)
+  ansible.builtin.copy:
+    dest: /etc/zabbix/web/zabbix.conf.php
+    mode: "0640"
+    owner: www-data
+    content: |
+      <?php
+      $DB['TYPE'] = 'POSTGRESQL'; $DB['SERVER'] = '127.0.0.1'; $DB['PORT'] = '0';
+      $DB['DATABASE'] = 'zabbix'; $DB['USER'] = 'zabbix'; $DB['PASSWORD'] = '{{ zabbix_db_password }}';
+      $DB['SCHEMA'] = ''; $DB['ENCRYPTION'] = false; $DB['KEY_FILE'] = ''; $DB['CERT_FILE'] = '';
+      $DB['CA_FILE'] = ''; $DB['VERIFY_HOST'] = false; $DB['CIPHER_LIST'] = ''; $DB['VAULT'] = '';
+      $DB['VAULT_URL'] = ''; $DB['VAULT_DB_PATH'] = ''; $DB['VAULT_TOKEN'] = ''; $DB['DOUBLE_IEEE754'] = true;
+      $ZBX_SERVER_NAME = 'TransLog';
+      $IMAGE_FORMAT_DEFAULT = IMAGE_FORMAT_PNG;
+  no_log: true
+
+- name: Web interface on port 80
+  ansible.builtin.lineinfile:
+    path: /etc/zabbix/nginx.conf
+    regexp: '^(\s*)#?\s*listen\s+'
+    line: '        listen          80 default_server;'
+  notify: Reload nginx (mon01)
+
+- name: Web interface answers for every name
+  ansible.builtin.lineinfile:
+    path: /etc/zabbix/nginx.conf
+    regexp: '^(\s*)#?\s*server_name\s+'
+    line: '        server_name     _;'
+  notify: Reload nginx (mon01)
+
+- name: No nginx default site
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: Reload nginx (mon01)
+
+- name: PHP time zone
+  ansible.builtin.lineinfile:
+    path: /etc/zabbix/php-fpm.conf
+    regexp: 'date.timezone'
+    line: "php_value[date.timezone] = {{ timezone }}"
+  notify: Restart php-fpm
+
+- name: Services run
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  loop: [zabbix-server, nginx, php8.3-fpm]
+
+- name: Flush handlers (the API must run with the new settings)
+  ansible.builtin.meta: flush_handlers
+
+- name: Checks and alarms through the Zabbix API
+  ansible.builtin.copy:
+    src: zabbix_setup.py
+    dest: /usr/local/sbin/translog-zabbix-setup
+    mode: "0700"
+
+- name: Apply checks, alarms and auto-registration
+  ansible.builtin.command: /usr/local/sbin/translog-zabbix-setup --threshold {{ ransomware_threshold }}
+  register: zsetup
+  changed_when: "'created' in zsetup.stdout or 'updated' in zsetup.stdout"
