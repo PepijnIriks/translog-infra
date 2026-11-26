@@ -73,7 +73,10 @@ def main():
         print("Niets veranderd. Start opnieuw met --doe-het om terug te zetten.")
         return
     for key, vid, _ in todo:
-        s3.copy_object(Bucket=a.bucket, Key=key, CopySource={"Bucket": a.bucket, "Key": key, "VersionId": vid})
+        # read the old (locked) version and write it back as the newest version. A server-side copy is not used:
+        # not every S3 server copies the exact version that was asked for.
+        body = s3.get_object(Bucket=a.bucket, Key=key, VersionId=vid)["Body"].read()
+        s3.put_object(Bucket=a.bucket, Key=key, Body=body)
     print(f"Klaar: {len(todo)} bestanden staan weer zoals op {t:%Y-%m-%d %H:%M}. Er is niets gewist.")
 
 

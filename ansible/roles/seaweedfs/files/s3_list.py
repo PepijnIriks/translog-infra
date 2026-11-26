@@ -83,13 +83,22 @@ def summary(s3, bucket):
             for v in page.get("Versions", []):
                 versions += 1
                 size += v["Size"]
-                keys.setdefault(v["Key"], []).append((v["LastModified"], v["ETag"]))
+                keys.setdefault(v["Key"], []).append((v["LastModified"], v["VersionId"]))
                 newest = max(newest, int(v["LastModified"].timestamp()))
             markers += len(page.get("DeleteMarkers", []))
-        # overwritten = the current version has other content than the first one (a rollback makes them equal again)
+        # overwritten = the current version has other CONTENT than the first one (a rollback makes them equal again).
+        # Content is compared, not the ETag: the ETag of a copy can differ while the content is the same.
         # (kopia.maintenance is rewritten by Kopia itself on purpose, so it is left out)
-        overwritten = sum(1 for k, vs in keys.items() if len(vs) > 1 and max(vs)[1] != min(vs)[1]
-                          and not k.endswith("kopia.maintenance"))
+        import hashlib
+
+        def digest(key, vid):
+            return hashlib.sha256(s3.get_object(Bucket=bucket, Key=key, VersionId=vid)["Body"].read()).hexdigest()
+        overwritten = 0
+        for k, vs in keys.items():
+            if len(vs) > 1 and not k.endswith("kopia.maintenance"):
+                vs.sort()
+                if digest(k, vs[-1][1]) != digest(k, vs[0][1]):
+                    overwritten += 1
         out.update({"files": len(keys), "versions": versions, "delete_markers": markers,
                     "overwritten": overwritten, "mb": round(size / 1e6, 1), "newest_write": newest})
     except Exception as e:  # noqa: BLE001
