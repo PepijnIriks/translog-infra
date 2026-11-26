@@ -181,6 +181,12 @@
     dest: /usr/local/sbin/translog-locktest
     mode: "0700"
 
+- name: Recovery after an attack - make the versions from before the attack current again (deletes nothing)
+  ansible.builtin.copy:
+    src: s3_rollback.py
+    dest: /usr/local/sbin/translog-s3-rollback
+    mode: "0700"
+
 # ---- One-time hand-over of the back-up login to app01
 - name: Hand-over script
   ansible.builtin.copy:
