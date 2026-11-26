@@ -21,7 +21,7 @@ backup01 vormt dat optie 5 uit het Plan van Aanpak.
 ```
             EduCloud-VPN / Fontys-netwerk
                         |
-   10.53.15.8 -> mon01 (:22 SSH, :80 Zabbix)  |  10.1.51.90 -> app01 (:80 portaal)
+   10.53.15.8 -> mon01 (:22 SSH, :80 Zabbix), demo01 (:8080 demo-website)  |  10.1.51.90 -> app01 (:80 portaal)
            |                 |        |
    +-------v-------+         |  +-----v--------+   S3 :8333 (alleen app01)   +----------------+
    | mon01 beheer  |-- SSH ---+->| app01        |---------------------------->| backup01       |
@@ -82,3 +82,13 @@ de fileshare versleutelen). Alles komt met tijden in `/var/log/translog-attack.l
 ```
 sudo translog-attack-sim --ik-weet-het-zeker
 ```
+
+## Demo-website (demo01, 10.20.2.20)
+
+http://10.53.15.8:8080 (VPN aan). Gebruiker `demo`, wachtwoord op demo01 in `/root/demo-password.txt`.
+Live overzicht van app01, backup01 en mon01 en knoppen voor de tests: back-up, test E1 (object lock),
+aanval (T1490 + T1486), en herstel (back-upbestanden terugzetten op backup01, data terugzetten op app01).
+De tijdlijn meet zelf de detectietijd (E12) en de hersteltijd (E4).
+
+demo01 heeft geen beheerrechten: het logt in als gebruiker `demo` met een eigen SSH-sleutel die op de
+servers alleen `translog-demo-cmd` mag starten (vaste lijst acties, rol `demo_agent`).
