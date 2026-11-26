@@ -3,273 +3,289 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TransLog – live demo</title>
+<title>TransLog – demo back-up en herstel</title>
 <style>
-  :root{
-    --bg:#0f1420; --panel:#161d2c; --panel2:#1c2538; --line:#2a3550; --text:#e6ebf5; --muted:#8a96b0;
-    --good:#2fbf71; --bad:#ef4b4b; --warn:#f2a93b; --info:#4c8dff; --alarm:#ff6b3d;
-  }
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
-  header{display:flex;align-items:baseline;gap:16px;padding:14px 22px;border-bottom:1px solid var(--line)}
-  header h1{font-size:18px;margin:0;font-weight:650}
-  header .sub{color:var(--muted)}
-  header .clock{margin-left:auto;font-variant-numeric:tabular-nums;color:var(--muted)}
-  main{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(330px,1fr);gap:18px;padding:18px 22px}
-  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px}
-  .panel h2{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0;padding:12px 14px;border-bottom:1px solid var(--line)}
-  /* diagram */
-  #diagram{position:relative;padding:22px}
-  #links{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
-  .grid{position:relative;display:grid;grid-template-columns:1fr 150px 1fr;grid-template-rows:auto 70px auto;gap:0}
-  .node{background:var(--panel2);border:2px solid var(--line);border-radius:12px;padding:12px 14px;min-height:150px;transition:border-color .4s, box-shadow .4s}
-  .node h3{margin:0 0 2px;font-size:16px;display:flex;align-items:center;gap:8px}
-  .node .role{color:var(--muted);font-size:12px;margin-bottom:8px}
-  .dot{width:10px;height:10px;border-radius:50%;background:var(--muted);display:inline-block}
-  .node.good{border-color:var(--good)} .node.good .dot{background:var(--good)}
-  .node.bad{border-color:var(--bad);box-shadow:0 0 0 4px rgba(239,75,75,.15)} .node.bad .dot{background:var(--bad)}
-  .node.warn{border-color:var(--warn)} .node.warn .dot{background:var(--warn)}
-  .node.busy{box-shadow:0 0 0 4px rgba(76,141,255,.25)}
-  .kv{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;font-size:13px}
-  .kv span:nth-child(odd){color:var(--muted)}
-  .kv b{font-weight:600;font-variant-numeric:tabular-nums}
-  #mon01{grid-column:1 / 4;grid-row:1;justify-self:center;width:min(520px,100%)}
-  #app01{grid-column:1;grid-row:3} #backup01{grid-column:3;grid-row:3}
-  #flow{grid-column:2;grid-row:3;align-self:center;text-align:center;color:var(--muted);font-size:12px;padding:0 6px}
-  #flow .big{font-size:13px;color:var(--text);font-weight:600}
-  .problems{margin:6px 0 0;padding:0;list-style:none;font-size:13px}
-  .problems li{padding:3px 8px;border-radius:6px;margin-top:4px;background:rgba(255,255,255,.04)}
-  .sev5,.sev4{border-left:3px solid var(--bad)} .sev3{border-left:3px solid var(--warn)} .sev2,.sev1,.sev0{border-left:3px solid var(--info)}
-  .none{color:var(--good)}
-  /* flows */
-  .link{stroke:var(--line);stroke-width:2;fill:none}
-  .link.on{stroke-dasharray:8 7;animation:dash .7s linear infinite}
-  .link.blue{stroke:var(--info)} .link.red{stroke:var(--bad)} .link.green{stroke:var(--good)}
-  @keyframes dash{to{stroke-dashoffset:-15}}
-  .link.rev.on{animation-direction:reverse}
-  /* actions */
-  #actions{padding:12px 14px;display:flex;flex-direction:column;gap:12px}
-  .step{border:1px solid var(--line);border-radius:10px;padding:10px 12px}
-  .step h4{margin:0 0 8px;font-size:13px}
-  .step p{margin:0 0 8px;color:var(--muted);font-size:12px}
-  .btns{display:flex;flex-wrap:wrap;gap:8px}
-  button{background:#243150;color:var(--text);border:1px solid #33446b;border-radius:8px;padding:7px 11px;font:inherit;cursor:pointer}
-  button:hover:not(:disabled){background:#2c3c63}
-  button:disabled{opacity:.45;cursor:not-allowed}
-  button.danger{background:#4a1f25;border-color:#7a2d36} button.danger:hover:not(:disabled){background:#5d262e}
-  button.ok{background:#1d4031;border-color:#2b6149} button.ok:hover:not(:disabled){background:#245039}
-  input{background:#0f1420;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 9px;font:inherit;width:150px}
-  label.t{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px;margin-bottom:8px}
-  #msg{min-height:18px;color:var(--warn);font-size:12px}
-  /* console + timeline */
-  .bottom{grid-column:1 / 3;display:grid;grid-template-columns:minmax(0,1.55fr) minmax(330px,1fr);gap:18px}
-  #console{margin:0;padding:12px 14px;height:330px;overflow:auto;font:12.5px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;color:#cfd8ea;white-space:pre-wrap}
-  #console .ok{color:var(--good)} #console .err{color:var(--bad)} #console .info{color:var(--muted)}
-  #timeline{list-style:none;margin:0;padding:8px 14px;height:330px;overflow:auto}
-  #timeline li{display:grid;grid-template-columns:64px 1fr;gap:8px;padding:5px 0;border-bottom:1px dashed var(--line);font-size:13px}
-  #timeline time{color:var(--muted);font-variant-numeric:tabular-nums}
-  #timeline .bad{color:#ff8f8f} #timeline .good{color:#7fe0aa} #timeline .alarm{color:var(--alarm);font-weight:600}
-  #timeline .measure{color:#fff;background:rgba(76,141,255,.15);border-radius:6px;padding:2px 6px;font-weight:600}
-  #timeline .start{color:#a9c4ff}
-  .muted{color:var(--muted)}
-  @media (max-width:1050px){main,.bottom{grid-template-columns:1fr}.bottom{grid-column:1}}
+  body{margin:0;background:#f4f5f7;color:#1d2433;font:15px/1.5 "Segoe UI",Arial,sans-serif}
+  .top{background:#0b5394;color:#fff;padding:12px 24px;display:flex;align-items:baseline;gap:18px}
+  .top b{font-size:19px}
+  .top span{opacity:.85;font-size:13px}
+  .top .clock{margin-left:auto;font-variant-numeric:tabular-nums}
+  .wrap{max-width:1250px;margin:0 auto;padding:18px 24px 40px}
+  h2{font-size:17px;color:#0b5394;margin:26px 0 8px;border-bottom:2px solid #0b5394;padding-bottom:4px}
+  .intro{margin:6px 0 0;color:#4a5568;max-width:900px}
+  .cols{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:24px}
+  table{border-collapse:collapse;width:100%;background:#fff}
+  th,td{border:1px solid #d5d9e0;padding:7px 10px;text-align:left;vertical-align:top}
+  th{background:#e9edf3;font-weight:600}
+  td.st{white-space:nowrap;font-weight:600}
+  .ok{color:#1d7a3e} .let{color:#a35d00} .fout{color:#b3261e}
+  .sq{display:inline-block;width:10px;height:10px;margin-right:6px;vertical-align:0}
+  .ok .sq{background:#1d7a3e} .let .sq{background:#d98a00} .fout .sq{background:#b3261e}
+  .det{font-size:14px}
+  th.w-srv{width:110px} th.w-taak{width:300px} th.w-st{width:110px}
+  .small{font-size:13px;color:#4a5568}
+  /* schematic */
+  .schema{background:#fff;border:1px solid #d5d9e0;border-top:0;padding:10px 12px}
+  .schema svg{width:100%;height:auto;display:block}
+  .schema text{font:13px "Segoe UI",Arial,sans-serif}
+  .box{fill:#fff;stroke:#1d2433;stroke-width:1.2}
+  .box.fout{stroke:#b3261e;stroke-width:2.5} .box.let{stroke:#d98a00;stroke-width:2} .box.ok{stroke:#1d7a3e;stroke-width:2}
+  .wire{stroke:#9aa3b2;stroke-width:2;fill:none}
+  .wire.on{stroke-dasharray:7 6;animation:dash .6s linear infinite;stroke-width:3}
+  .wire.blauw{stroke:#0b5394} .wire.rood{stroke:#b3261e} .wire.groen{stroke:#1d7a3e}
+  .wire.terug{animation-direction:reverse}
+  @keyframes dash{to{stroke-dashoffset:-13}}
+  #wire-label{font-weight:600}
+  /* tests */
+  ol.tests{list-style:none;margin:0;padding:0;counter-reset:t}
+  ol.tests > li{background:#fff;border:1px solid #d5d9e0;border-left:4px solid #0b5394;margin-bottom:10px;padding:10px 14px}
+  ol.tests > li.aanval{border-left-color:#b3261e} ol.tests > li.herstel{border-left-color:#1d7a3e}
+  .t-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .t-head h3{font-size:15px;margin:0}
+  .t-body{display:grid;grid-template-columns:1fr 1fr;gap:4px 24px;margin-top:6px;font-size:14px}
+  .t-body p{margin:0}
+  .t-body b{color:#4a5568;font-weight:600;font-size:12px;display:block}
+  .eis{font-size:12px;background:#e9edf3;padding:1px 7px;border-radius:3px;color:#1d2433}
+  button{font:inherit;font-size:14px;padding:5px 14px;border:1px solid #0b5394;background:#0b5394;color:#fff;border-radius:3px;cursor:pointer}
+  button.sec{background:#fff;color:#0b5394}
+  button.rood{background:#b3261e;border-color:#b3261e}
+  button.groen{background:#1d7a3e;border-color:#1d7a3e}
+  button.rood.sec{background:#fff;color:#b3261e}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  .tijd{display:flex;align-items:center;gap:10px;margin:0 0 10px;background:#fff;border:1px solid #d5d9e0;padding:8px 12px;font-size:14px}
+  .tijd input{font:inherit;padding:3px 6px;width:150px;border:1px solid #9aa3b2}
+  #msg{color:#b3261e;font-weight:600;min-height:20px}
+  pre#console{margin:0;background:#fff;border:1px solid #d5d9e0;padding:10px 12px;height:340px;overflow:auto;font:12.5px/1.45 Consolas,"Courier New",monospace;white-space:pre-wrap}
+  #console .goed{color:#1d7a3e} #console .slecht{color:#b3261e} #console .grijs{color:#6b7280}
+  .log{height:340px;overflow:auto;background:#fff;border:1px solid #d5d9e0}
+  .log table{border:0} .log td{border-left:0;border-right:0;font-size:14px}
+  .log td:first-child{width:70px;color:#6b7280;font-variant-numeric:tabular-nums}
+  .log .meting td{background:#eef4fb;font-weight:600}
+  .log .alarm td:last-child{color:#b3261e;font-weight:600}
+  @media (max-width:1000px){.cols,.t-body{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
-<header>
-  <h1>TransLog – ransomware-bestendige infrastructuur</h1>
-  <span class="sub">live demo · EduCloud VPC translog</span>
-  <span class="clock" id="clock">–</span>
-</header>
+<div class="top">
+  <b>TransLog B.V.</b>
+  <span>Demo: back-ups die ransomware overleven · testomgeving Fontys EduCloud</span>
+  <span class="clock" id="clock"></span>
+</div>
 
-<main>
-  <section class="panel">
-    <h2>Omgeving (ververst elke 5 seconden)</h2>
-    <div id="diagram">
-      <svg id="links"></svg>
-      <div class="grid">
-        <div class="node" id="mon01">
-          <h3><span class="dot"></span>mon01 <span class="muted" style="font-weight:400;font-size:12px">10.20.2.10</span></h3>
-          <div class="role">Beheer · Zabbix-monitoring</div>
-          <div id="mon01-body" class="muted">laden…</div>
-        </div>
-        <div class="node" id="app01">
-          <h3><span class="dot"></span>app01 <span class="muted" style="font-weight:400;font-size:12px">10.20.1.10</span></h3>
-          <div class="role">Productie · portaal, database, fileshare, Kopia</div>
-          <div id="app01-body" class="muted">laden…</div>
-        </div>
-        <div id="flow"><div class="big" id="flow-text">S3 :8333</div><div id="flow-sub">alleen app01 → backup01</div></div>
-        <div class="node" id="backup01">
-          <h3><span class="dot"></span>backup01 <span class="muted" style="font-weight:400;font-size:12px">10.20.3.10</span></h3>
-          <div class="role">Back-up · SeaweedFS met object lock</div>
-          <div id="backup01-body" class="muted">laden…</div>
-        </div>
-      </div>
+<div class="wrap">
+  <p class="intro">Deze pagina laat live zien hoe de drie servers van TransLog ervoor staan, en start de tests uit het testplan.
+  De pagina zelf heeft geen beheerrechten: hij mag op de servers alleen deze vaste tests starten.</p>
+
+  <h2>1. Stand van de servers</h2>
+  <div>
+    <table>
+      <thead><tr><th class="w-srv">Server</th><th class="w-taak">Taak</th><th class="w-st">Status</th><th>Gegevens</th></tr></thead>
+      <tbody>
+        <tr><td><b>app01</b><br><span class="small">10.20.1.10</span></td><td>Productie: klantportaal, database, fileshare. Maakt elke nacht een back-up (Kopia).</td>
+            <td class="st" id="st-app01">–</td><td class="det" id="app01-body">laden…</td></tr>
+        <tr><td><b>backup01</b><br><span class="small">10.20.3.10</span></td><td>Back-upopslag (SeaweedFS). Alles wat erop staat is 14 dagen vergrendeld.</td>
+            <td class="st" id="st-backup01">–</td><td class="det" id="backup01-body">laden…</td></tr>
+        <tr><td><b>mon01</b><br><span class="small">10.20.2.10</span></td><td>Monitoring (Zabbix). Geeft alarm bij een mislukte back-up of een aanval.</td>
+            <td class="st" id="st-mon01">–</td><td class="det" id="mon01-body">laden…</td></tr>
+      </tbody>
+    </table>
+    <div class="schema">
+      <svg viewBox="0 0 900 190" aria-label="Schema van de omgeving">
+        <rect class="box" id="b-mon01" x="350" y="8" width="200" height="50"/>
+        <text x="450" y="29" text-anchor="middle" font-weight="600">mon01 · Zabbix</text>
+        <text x="450" y="47" text-anchor="middle" fill="#4a5568" id="t-mon01">–</text>
+        <path class="wire" d="M150 120 V33 H350" stroke-dasharray="2 4"/>
+        <path class="wire" d="M750 120 V33 H550" stroke-dasharray="2 4"/>
+        <text x="250" y="27" text-anchor="middle" fill="#6b7280" font-size="11">meldingen</text>
+        <text x="650" y="27" text-anchor="middle" fill="#6b7280" font-size="11">meldingen</text>
+        <rect class="box" id="b-app01" x="40" y="120" width="220" height="56"/>
+        <text x="150" y="142" text-anchor="middle" font-weight="600">app01 · productie</text>
+        <text x="150" y="162" text-anchor="middle" fill="#4a5568" id="t-app01">–</text>
+        <rect class="box" id="b-backup01" x="640" y="120" width="220" height="56"/>
+        <text x="750" y="142" text-anchor="middle" font-weight="600">backup01 · back-upopslag</text>
+        <text x="750" y="162" text-anchor="middle" fill="#4a5568" id="t-backup01">–</text>
+        <path class="wire" id="wire" d="M260 148 H640"/>
+        <text x="450" y="138" text-anchor="middle" id="wire-label">S3, poort 8333</text>
+        <text x="450" y="168" text-anchor="middle" fill="#4a5568" font-size="12" id="wire-sub">alleen app01 mag schrijven</text>
+      </svg>
     </div>
-  </section>
-
-  <section class="panel">
-    <h2>Tests starten</h2>
-    <div id="actions">
-      <div class="step">
-        <h4>1 · Normale situatie</h4>
-        <p>Een back-up maken en controleren dat de back-ups niet te wissen zijn (E1).</p>
-        <div class="btns">
-          <button data-a="backup">Back-up nu</button>
-          <button data-a="locktest">Test E1: back-ups wissen</button>
-          <button data-a="s3-list">Bekijk bucket</button>
-        </div>
-      </div>
-      <div class="step">
-        <h4>2 · Aanval (testscript, alleen testdata)</h4>
-        <p>T1490: back-ups wissen/overschrijven met de gestolen sleutel. T1486: fileshare versleutelen. Zabbix moet binnen 5 minuten alarm geven (E12).</p>
-        <div class="btns">
-          <button class="danger" data-a="attack">Start aanval (T1490 + T1486)</button>
-          <button class="danger" data-a="attack-encrypt">Alleen versleutelen</button>
-        </div>
-      </div>
-      <div class="step">
-        <h4>3 · Herstel (E6/E7)</h4>
-        <label class="t">Moment vóór de aanval <input id="when" placeholder="JJJJ-MM-DD UU:MM"></label>
-        <div class="btns">
-          <button data-a="rollback-preview">1a · Wat is overschreven?</button>
-          <button class="ok" data-a="rollback">1b · Back-upbestanden terugzetten</button>
-          <button data-a="restore-list">Snapshots</button>
-          <button class="ok" data-a="restore">2 · Data terugzetten op app01</button>
-        </div>
-      </div>
-      <div id="msg"></div>
-    </div>
-  </section>
-
-  <div class="bottom">
-    <section class="panel">
-      <h2 id="console-title">Uitvoer</h2>
-      <pre id="console"><span class="info">Kies een test. De uitvoer verschijnt hier live.</span></pre>
-    </section>
-    <section class="panel">
-      <h2>Tijdlijn en metingen</h2>
-      <ul id="timeline"></ul>
-    </section>
   </div>
-</main>
+
+  <h2>2. Tests</h2>
+  <div class="tijd">
+    <label for="when">Moment van vóór de aanval (voor het herstel):</label>
+    <input id="when" placeholder="JJJJ-MM-DD UU:MM">
+    <span class="small">Wordt automatisch ingevuld met het startmoment van de laatste aanval.</span>
+  </div>
+  <div id="msg"></div>
+  <ol class="tests">
+    <li>
+      <div class="t-head"><button data-a="backup">Back-up maken</button><h3>Back-up maken</h3><span class="eis">E5</span></div>
+      <div class="t-body">
+        <p><b>Wat het doet</b>app01 maakt een kopie van de database en de fileshare, versleutelt die en zet hem op backup01. Daarna leest hij een deel terug ter controle.</p>
+        <p><b>Wat je moet zien</b>Code 0 in de uitvoer. Bij app01 springt "Laatste back-up" naar "net".</p>
+      </div>
+    </li>
+    <li>
+      <div class="t-head"><button data-a="locktest">Test E1 starten</button><h3>Proberen de back-ups te vernietigen</h3><span class="eis">E1</span></div>
+      <div class="t-body">
+        <p><b>Wat het doet</b>Probeert met de sleutel van app01 én met de beheersleutel van backup01 back-ups te wissen, te overschrijven, de bewaartijd in te korten en de bucket te verwijderen.</p>
+        <p><b>Wat je moet zien</b>Elke poging "geweigerd" en onderaan "E1 GEHAALD". Zelfs de beheerder kan niets wissen.</p>
+      </div>
+    </li>
+    <li>
+      <div class="t-head"><button class="sec" data-a="s3-list">Bucket bekijken</button><h3>Inhoud van de back-upopslag</h3></div>
+      <div class="t-body">
+        <p><b>Wat het doet</b>Toont de back-upbestanden op backup01 met hun versies en tot wanneer ze vergrendeld zijn.</p>
+        <p><b>Wat je moet zien</b>Achter elk bestand "COMPLIANCE until …" (14 dagen na het maken).</p>
+      </div>
+    </li>
+    <li class="aanval">
+      <div class="t-head"><button class="rood" data-a="attack">Aanval starten</button><h3>Ransomware-aanval nadoen</h3><span class="eis">E11 · E12</span></div>
+      <div class="t-body">
+        <p><b>Wat het doet</b>Testscript op app01, alleen op testdata. Stap 1 (MITRE T1490): met de back-upsleutel die op app01 staat alle back-ups wissen en 20 bestanden overschrijven. Stap 2 (T1486): alle bestanden op de fileshare versleutelen.</p>
+        <p><b>Wat je moet zien</b>Wissen lukt niet ("0 deleted"). De fileshare raakt versleuteld, het portaal wordt rood en Zabbix geeft binnen 5 minuten alarm. Het logboek meet de detectietijd.</p>
+      </div>
+    </li>
+    <li class="aanval">
+      <div class="t-head"><button class="rood sec" data-a="attack-encrypt">Alleen versleutelen</button><h3>Alleen de fileshare versleutelen</h3><span class="eis">E12</span></div>
+      <div class="t-body">
+        <p><b>Wat het doet</b>Alleen stap 2 van de aanval, zonder de back-ups aan te vallen. Handig om alleen de detectie te laten zien.</p>
+        <p><b>Wat je moet zien</b>Zabbix-alarm "Mogelijke ransomware" en "Versleutelde bestanden".</p>
+      </div>
+    </li>
+    <li class="herstel">
+      <div class="t-head"><button class="sec" data-a="rollback-preview">Controleren</button><button class="groen" data-a="rollback">Terugzetten</button><h3>Herstel stap 1: back-upopslag terugzetten</h3><span class="eis">E1</span></div>
+      <div class="t-body">
+        <p><b>Wat het doet</b>De aanvaller kon niets wissen, maar wel nieuwe versies over 20 back-upbestanden schrijven. "Controleren" laat die zien; "Terugzetten" maakt de oude, vergrendelde versies weer de actuele. Er wordt niets gewist.</p>
+        <p><b>Wat je moet zien</b>"20 terug te zetten" bij controleren, daarna "Klaar". Na een herstel is er niets terug te zetten.</p>
+      </div>
+    </li>
+    <li class="herstel">
+      <div class="t-head"><button class="sec" data-a="restore-list">Back-ups tonen</button><button class="groen" data-a="restore">Data terugzetten</button><h3>Herstel stap 2: app01 terugzetten</h3><span class="eis">E4 · E6</span></div>
+      <div class="t-body">
+        <p><b>Wat het doet</b>Zet de fileshare en de database van app01 terug uit de laatste back-up van vóór het ingevulde moment, zodat er geen versleutelde bestanden terugkomen. Controleert daarna het portaal.</p>
+        <p><b>Wat je moet zien</b>"Encrypted files left: 0". app01 wordt weer groen en het logboek toont de hersteltijd.</p>
+      </div>
+    </li>
+  </ol>
+
+  <div class="cols">
+    <div>
+      <h2 id="console-title">3. Uitvoer</h2>
+      <pre id="console"><span class="grijs">Start een test. De uitvoer van de server verschijnt hier terwijl de test loopt.</span></pre>
+    </div>
+    <div>
+      <h2>4. Logboek en metingen</h2>
+      <div class="log"><table><tbody id="timeline"></tbody></table></div>
+    </div>
+  </div>
+</div>
 
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const hhmm = t => new Date(t*1000).toLocaleTimeString("nl-NL",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
-const ago = t => { if(!t) return "–"; const m = Math.round((Date.now()/1000 - t)/60); return m < 1 ? "net" : m < 60 ? m+" min geleden" : Math.round(m/60)+" uur geleden"; };
+const ago = t => { if(!t) return "–"; const m = Math.round((Date.now()/1000 - t)/60); return m < 1 ? "net" : m < 60 ? m+" min geleden" : Math.floor(m/60)+" uur "+(m%60)+" min geleden"; };
+const LABEL = {ok:"In orde", let:"Let op", fout:"Probleem"};
 let running = null, whenTouched = false, actions = {};
 
 setInterval(() => $("#clock").textContent = new Date().toLocaleString("nl-NL"), 1000);
 
-function setNode(id, cls){ const n = $("#"+id); n.classList.remove("good","bad","warn"); if(cls) n.classList.add(cls); }
-function kv(rows){ return '<div class="kv">' + rows.map(([k,v]) => `<span>${esc(k)}</span><b>${v}</b>`).join("") + "</div>"; }
+function status(id, s, short){
+  $("#st-"+id).innerHTML = s ? `<span class="${s}"><span class="sq"></span>${LABEL[s]}</span>` : "–";
+  $("#b-"+id).setAttribute("class", "box " + (s||""));
+  $("#t-"+id).textContent = short || "";
+}
+function lines(rows){ return rows.map(([k,v]) => `<div>${esc(k)}: <b>${v}</b></div>`).join(""); }
 
 function render(d){
   const h = d.state.hosts || {};
-  // app01
   const a = h.app01 || {};
-  if(!a.reachable){ setNode("app01","warn"); $("#app01-body").innerHTML = '<span class="muted">niet bereikbaar vanaf demo01</span>'; }
+  if(!a.reachable){ status("app01","let","niet bereikbaar"); $("#app01-body").textContent = "Niet bereikbaar vanaf de demo-server."; }
   else{
-    const hl = a.health || {}, bad = a.locked > 0 || hl.ok === false;
-    setNode("app01", bad ? "bad" : (a.backup_status === "0" ? "good" : "warn"));
-    $("#app01-body").innerHTML = kv([
-      ["Portaal", hl.ok ? '<span style="color:var(--good)">gezond</span>' : '<span style="color:var(--bad)">NIET gezond</span>'],
-      ["Zendingen in database", (hl.zendingen ?? "–").toLocaleString("nl-NL")],
-      ["Bestanden fileshare", a.files],
-      ["Versleuteld (*.locked)", a.locked > 0 ? `<span style="color:var(--bad)">${a.locked}</span>` : "0"],
-      ["Laatste back-up", a.backup_status === "0" ? "gelukt" : `<span style="color:var(--warn)">code ${esc(a.backup_status||"?")}</span>`],
-      ["Laatste geslaagde", ago(+a.backup_last_ok)],
+    const hl = a.health || {}, kapot = a.locked > 0 || hl.ok === false;
+    status("app01", kapot ? "fout" : (a.backup_status === "0" ? "ok" : "let"),
+           kapot ? `${a.locked} bestanden versleuteld` : "portaal werkt");
+    $("#app01-body").innerHTML = lines([
+      ["Portaal", hl.ok ? '<span class="ok">werkt</span>' : '<span class="fout">werkt niet</span>'],
+      ["Zendingen", (hl.zendingen ?? "–").toLocaleString("nl-NL")],
+      ["Bestanden op de fileshare", a.files],
+      ["Versleutelde bestanden", a.locked > 0 ? `<span class="fout">${a.locked}</span>` : "0"],
+      ["Laatste back-up", (a.backup_status === "0" ? "gelukt, " : `<span class="let">mislukt (code ${esc(a.backup_status||"?")})</span>, `) + ago(+a.backup_last_ok)],
     ]);
   }
-  // backup01
   const b = h.backup01 || {};
-  if(!b.reachable || b.ok === false){ setNode("backup01","warn"); $("#backup01-body").innerHTML = `<span class="muted">${esc(b.error || "niet bereikbaar")}</span>`; }
+  if(!b.reachable || b.ok === false){ status("backup01","let","niet bereikbaar"); $("#backup01-body").textContent = b.error || "Niet bereikbaar vanaf de demo-server."; }
   else{
-    setNode("backup01", b.overwritten > 0 ? "warn" : "good");
-    $("#backup01-body").innerHTML = kv([
-      ["Object lock", esc(b.lock)], ["Versiebeheer", esc(b.versioning)],
-      ["Back-upbestanden", b.files], ["Versies (vastgezet)", b.versions],
-      ["Met nieuwere versie", b.overwritten > 0 ? `<span style="color:var(--warn)">${b.overwritten}</span>` : "0"],
-      ["Opslag", b.mb + " MB"], ["Laatst geschreven", ago(b.newest_write)],
+    const extra = b.overwritten;
+    status("backup01", extra > 0 ? "let" : "ok", `${b.versions} versies vergrendeld`);
+    $("#backup01-body").innerHTML = lines([
+      ["Vergrendeling", esc(b.lock) + " (COMPLIANCE: ook de beheerder kan niet wissen)"],
+      ["Back-upbestanden", `${b.files} (${b.versions} versies, ${b.mb} MB)`],
+      ["Overschreven door aanvaller", extra > 0 ? `<span class="let">${extra} bestanden (oude versie nog aanwezig)</span>` : "0"],
+      ["Laatst iets weggeschreven", ago(b.newest_write)],
     ]);
   }
-  // mon01
   const m = h.mon01 || {};
-  if(!m.reachable || m.ok === false){ setNode("mon01","warn"); $("#mon01-body").innerHTML = `<span class="muted">${esc(m.error || "niet bereikbaar")}</span>`; }
+  if(!m.reachable || m.ok === false){ status("mon01","let","niet bereikbaar"); $("#mon01-body").textContent = m.error || "Niet bereikbaar vanaf de demo-server."; }
   else{
-    const p = m.problems || [];
-    setNode("mon01", p.some(x => x.severity >= 4) ? "bad" : p.length ? "warn" : "good");
-    $("#mon01-body").innerHTML = `<div class="kv"><span>Gemonitorde servers</span><b>${(m.hosts||[]).length}</b><span>Open problemen</span><b>${p.length}</b></div>` +
-      (p.length ? '<ul class="problems">' + p.slice(0,5).map(x => `<li class="sev${x.severity}">${esc(x.name)} <span class="muted">· ${esc(x.host)} · ${hhmm(x.since)}</span></li>`).join("") + "</ul>"
-                : '<div class="none" style="margin-top:6px">Geen problemen</div>');
+    const p = m.problems || [], ernstig = p.filter(x => x.severity >= 3);
+    status("mon01", ernstig.some(x => x.severity >= 4) ? "fout" : ernstig.length ? "let" : "ok",
+           ernstig.length ? `${ernstig.length} alarm(en)` : "geen alarmen");
+    $("#mon01-body").innerHTML = `<div>${(m.hosts||[]).length} servers bewaakt</div>` +
+      (p.length ? p.slice(0,5).map(x => `<div class="${x.severity>=4?'fout':x.severity>=3?'let':''}">${hhmm(x.since)} · ${esc(x.host)}: ${esc(x.name)}</div>`).join("")
+                : '<div class="ok">Geen open meldingen</div>');
   }
-  // timeline
-  $("#timeline").innerHTML = d.events.slice().reverse().map(e => `<li><time>${hhmm(e.t)}</time><span class="${esc(e.kind)}">${esc(e.text)}</span></li>`).join("");
-  // running action -> flows and buttons
+  $("#timeline").innerHTML = d.events.slice().reverse().map(e =>
+    `<tr class="${e.kind==='measure'?'meting':e.kind==='alarm'?'alarm':''}"><td>${hhmm(e.t)}</td><td>${esc(e.text)}</td></tr>`).join("");
   const r = d.running[0];
   running = r ? r.action : null;
   document.querySelectorAll("button[data-a]").forEach(btn => btn.disabled = !!running);
-  ["app01","backup01","mon01"].forEach(id => $("#"+id).classList.toggle("busy", !!(r && d.actions[r.action] && d.actions[r.action].host === id)));
-  flows(running);
+  wire(running);
   if(!whenTouched) $("#when").value = d.suggest_time;
   actions = d.actions;
 }
 
-const FLOW = {
-  "backup": ["blue", false, "Back-up", "versleuteld → backup01"],
-  "attack": ["red", false, "AANVAL T1490", "gestolen sleutel → backup01"],
-  "locktest": ["red", false, "Test E1", "wissen/wijzigen proberen"],
-  "rollback": ["green", false, "Terugzetten", "oude versies weer actueel"],
-  "restore": ["green", true, "Herstel", "backup01 → app01"],
+const WIRE = {
+  backup:   ["blauw", false, "back-up loopt", "versleuteld naar backup01"],
+  attack:   ["rood", false, "AANVAL loopt", "aanvaller probeert back-ups te wissen"],
+  locktest: ["rood", false, "test E1 loopt", "wissen en wijzigen proberen"],
+  rollback: ["groen", false, "terugzetten", "oude versies weer actueel"],
+  restore:  ["groen", true, "herstel loopt", "backup01 naar app01"],
 };
-function flows(act){
-  const f = FLOW[act];
-  const l = $("#l-main");
-  if(!l) return;
-  l.setAttribute("class", "link" + (f ? " on " + f[0] + (f[1] ? " rev" : "") : ""));
-  $("#flow-text").textContent = f ? f[2] : "S3 :8333";
-  $("#flow-sub").textContent = f ? f[3] : "alleen app01 → backup01";
+function wire(act){
+  const w = WIRE[act];
+  $("#wire").setAttribute("class", "wire" + (w ? ` on ${w[0]}` + (w[1] ? " terug" : "") : ""));
+  $("#wire-label").textContent = w ? w[2] : "S3, poort 8333";
+  $("#wire-sub").textContent = w ? w[3] : "alleen app01 mag schrijven";
 }
-
-function drawLinks(){
-  const svg = $("#links"), box = $("#diagram").getBoundingClientRect();
-  const r = id => { const b = $("#"+id).getBoundingClientRect(); return {x:b.left-box.left, y:b.top-box.top, w:b.width, h:b.height}; };
-  const a = r("app01"), b = r("backup01"), m = r("mon01");
-  const y = a.y + a.h/2;
-  svg.innerHTML =
-    `<path id="l-main" class="link" d="M${a.x+a.w} ${y} L${b.x} ${y}"/>` +
-    `<path class="link" d="M${a.x+a.w/2} ${a.y} L${a.x+a.w/2} ${m.y+m.h/2} L${m.x} ${m.y+m.h/2}" stroke-dasharray="3 5"/>` +
-    `<path class="link" d="M${b.x+b.w/2} ${b.y} L${b.x+b.w/2} ${m.y+m.h/2} L${m.x+m.w} ${m.y+m.h/2}" stroke-dasharray="3 5"/>`;
-  flows(running);
-}
-addEventListener("resize", drawLinks);
 
 async function refresh(){
-  try{ const d = await (await fetch("api/state")).json(); render(d); drawLinks(); }
-  catch(e){ $("#msg").textContent = "Geen verbinding met de demo-server"; }
+  try{ render(await (await fetch("api/state")).json()); $("#msg").textContent = ""; }
+  catch(e){ $("#msg").textContent = "Geen verbinding met de demo-server."; }
 }
 
 function out(line){
   const c = $("#console"), s = document.createElement("span");
-  s.className = /FOUT|ERROR|failed|NIET|refused|GELUKT -/i.test(line) && !/geweigerd/i.test(line) ? "err" : /\[OK|gelukt|GEHAALD|code 0|SAFE|Klaar/i.test(line) ? "ok" : "";
+  if(/geweigerd|refused|\[OK|GEHAALD|SAFE|code 0\b|Encrypted files left: 0|Klaar/i.test(line)) s.className = "goed";
+  else if(/FOUT|ERROR|failed|NOT SAFE|NIET GEHAALD|SUCCEEDED/i.test(line)) s.className = "slecht";
   s.textContent = line + "\n"; c.appendChild(s); c.scrollTop = c.scrollHeight;
 }
 
 async function start(action){
   $("#msg").textContent = "";
-  const a = actions[action] || {};
-  if(action.startsWith("attack") && !confirm("Dit start het aanvalstestscript op app01: de testbestanden worden versleuteld en er wordt geprobeerd de back-ups te vernietigen. Doorgaan?")) return;
-  if(action === "restore" && !confirm(`Fileshare en database van app01 terugzetten naar de laatste back-up vóór ${$("#when").value}?`)) return;
+  if(action.startsWith("attack") && !confirm("Dit start het aanvalsscript op app01. De testbestanden worden versleuteld en het script probeert de back-ups te vernietigen. Doorgaan?")) return;
+  if(action === "rollback" && !confirm(`Back-upbestanden op backup01 terugzetten naar de stand van ${$("#when").value}?`)) return;
+  if(action === "restore" && !confirm(`Fileshare en database van app01 terugzetten uit de laatste back-up vóór ${$("#when").value}?`)) return;
   const res = await fetch("api/run", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({action, when: $("#when").value})});
   const d = await res.json();
   if(!res.ok){ $("#msg").textContent = d.error || "Mislukt"; return; }
-  $("#console").innerHTML = ""; $("#console-title").textContent = "Uitvoer – " + (a.label || action);
-  running = action; flows(action); refresh();
+  $("#console").innerHTML = ""; $("#console-title").textContent = "3. Uitvoer – " + ((actions[action]||{}).label || action);
+  running = action; wire(action);
   const es = new EventSource("api/stream/" + d.id);
   es.onmessage = ev => out(JSON.parse(ev.data));
-  es.addEventListener("done", ev => { es.close(); out("── klaar (code " + ev.data + ") ──"); refresh(); });
+  es.addEventListener("done", ev => { es.close(); out("--- klaar (code " + ev.data + ") ---"); refresh(); });
   es.onerror = () => { es.close(); refresh(); };
 }
 

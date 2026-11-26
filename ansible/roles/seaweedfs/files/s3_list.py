@@ -83,12 +83,15 @@ def summary(s3, bucket):
             for v in page.get("Versions", []):
                 versions += 1
                 size += v["Size"]
-                keys[v["Key"]] = keys.get(v["Key"], 0) + 1
+                keys.setdefault(v["Key"], []).append((v["LastModified"], v["ETag"]))
                 newest = max(newest, int(v["LastModified"].timestamp()))
             markers += len(page.get("DeleteMarkers", []))
+        # overwritten = the current version has other content than the first one (a rollback makes them equal again)
+        # (kopia.maintenance is rewritten by Kopia itself on purpose, so it is left out)
+        overwritten = sum(1 for k, vs in keys.items() if len(vs) > 1 and max(vs)[1] != min(vs)[1]
+                          and not k.endswith("kopia.maintenance"))
         out.update({"files": len(keys), "versions": versions, "delete_markers": markers,
-                    "overwritten": sum(1 for n in keys.values() if n > 1), "mb": round(size / 1e6, 1),
-                    "newest_write": newest})
+                    "overwritten": overwritten, "mb": round(size / 1e6, 1), "newest_write": newest})
     except Exception as e:  # noqa: BLE001
         out = {"ok": False, "error": str(e)[:200]}
     print(json.dumps(out))
