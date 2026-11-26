@@ -137,7 +137,7 @@
       After=network-online.target {{ seaweedfs_dir | regex_replace('^/', '') | replace('/', '-') }}.mount
       [Service]
       User=seaweed
-      ExecStart=/usr/local/bin/weed server -dir={{ seaweedfs_dir }} -ip={{ backup01_ip }} -ip.bind=0.0.0.0 -master.volumeSizeLimitMB=1024 -volume.max=0 -s3 -s3.port={{ s3_port }} -s3.config=/etc/seaweedfs/s3.json
+      ExecStart=/usr/local/bin/weed server -dir={{ seaweedfs_dir }} -ip={{ backup01_ip }} -master.volumeSizeLimitMB=1024 -volume.max=40 -s3 -s3.port={{ s3_port }} -s3.config=/etc/seaweedfs/s3.json
       Restart=always
       RestartSec=5
       LimitNOFILE=65536
@@ -163,7 +163,7 @@
 
 - name: Bucket with object lock and default retention (COMPLIANCE, {{ object_lock_days }} days)
   ansible.builtin.command: >-
-    /usr/local/sbin/translog-bucket-setup --endpoint http://127.0.0.1:{{ s3_port }}
+    /usr/local/sbin/translog-bucket-setup --endpoint http://{{ backup01_ip }}:{{ s3_port }}
     --bucket {{ backup_bucket }} --days {{ object_lock_days }}
   register: bucket
   changed_when: "'created' in bucket.stdout or 'set' in bucket.stdout"
@@ -209,5 +209,5 @@
     dest: /etc/zabbix/zabbix_agent2.d/20-seaweedfs.conf
     mode: "0644"
     content: |
-      UserParameter=translog.s3.up,curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:{{ s3_port }}/ ; echo
+      UserParameter=translog.s3.up,curl -s -o /dev/null -w '%{http_code}' http://{{ backup01_ip }}:{{ s3_port }}/ ; echo
   notify: Restart zabbix-agent2 (backup01)
