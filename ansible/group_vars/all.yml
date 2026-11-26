@@ -15,7 +15,7 @@ backup_cidr: 10.20.3.0/24
 vpn_cidr: 172.16.16.0/20    # EduCloud OpenVPN (laptops)
 
 # Back-up storage with object lock (backup01)
-seaweedfs_version: "3.97"
+seaweedfs_version: "4.55"
 seaweedfs_dir: /srv/seaweedfs          # on the 50 GB data disk
 seaweedfs_data_disk: /dev/vdb
 s3_port: 8333
