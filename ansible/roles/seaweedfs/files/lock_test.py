@@ -4,7 +4,7 @@ with the Kopia key from app01 AND with the admin key of backup01. Every attack m
 
   T1a  delete a locked version of a test object          (kopia key, admin key, admin + governance bypass)
   T1b  overwrite the test object -> new version, the old one stays
-  T1c  delete a REAL Kopia back-up file (translog/kopia.repository, every version)
+  T1c  delete a REAL Kopia back-up file (app01/kopia.repository, every version)
   T2a  kopia key changes the bucket's object lock setting
   T2b  kopia key shortens the lock of a version
   T2c  kopia key / admin key deletes the whole bucket
@@ -23,7 +23,7 @@ from botocore.exceptions import ClientError
 
 ENDPOINT = "http://10.20.3.10:8333"
 BUCKET = "translog-backups"
-KOPIA_PREFIX = "translog/"
+KOPIA_PREFIX = "app01/"
 LOG = "/var/log/translog-locktest.log"
 lines = []
 fails = 0

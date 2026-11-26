@@ -3,7 +3,7 @@
 # once from backup01) in environment variables, so it never shows up in a command line or a log.
 set -a
 BUCKET=$(jq -r .bucket /etc/translog/backup.json)
-PREFIX=$(cat /etc/translog/kopia-prefix 2>/dev/null || jq -r '.prefix // "translog/"' /etc/translog/backup.json)
+PREFIX=$(cat /etc/translog/kopia-prefix 2>/dev/null || jq -r '.prefix // "app01/"' /etc/translog/backup.json)
 ENDPOINT=$(jq -r .endpoint /etc/translog/backup.json)
 RETENTION_DAYS=$(jq -r .retention_days /etc/translog/backup.json)
 AWS_ACCESS_KEY_ID=$(jq -r .access_key /etc/translog/backup.json)
