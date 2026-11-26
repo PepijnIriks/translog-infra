@@ -18,7 +18,7 @@
     mode: "0644"
     content: |
       # Managed by translog-infra
-      Server={{ mon01_ip }}
+      Server={{ mon01_ip }},127.0.0.1
       ServerActive={{ mon01_ip }}
       Hostname={{ inventory_hostname }}
       HostMetadata=translog {{ group_names | join(' ') }}
