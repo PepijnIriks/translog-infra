@@ -80,17 +80,21 @@ def poll():
             health = (a.get("health") or {}).get("ok")
             if prev and health is not None and prev.get("health") is not None and health != prev["health"]:
                 event("good" if health else "bad", "Portaal " + ("weer gezond" if health else "NIET gezond"))
-                if health and last_attack["t"]:
+                if health and last_attack["t"] and not last_attack.get("recovered"):
+                    last_attack["recovered"] = True
                     mins = (now() - last_attack["t"]) / 60
                     event("measure", f"Hersteltijd (aanval tot portaal gezond): {mins:.1f} minuten (eis E4: < 4 uur)")
             ov = b.get("overwritten")
             if prev and ov is not None and prev.get("ov") is not None and ov != prev["ov"]:
                 event("bad" if ov > prev["ov"] else "info", f"backup01: {ov} back-upbestanden hebben een nieuwere versie")
-            probs = {(p["host"], p["name"]) for p in m.get("problems", [])}
+            # only real alarms (severity "gemiddeld" or higher); information messages are left out
+            probs = {(p["host"], p["name"]) for p in m.get("problems", []) if p.get("severity", 0) >= 3}
             if "probs" in prev:
                 for h, n in probs - prev["probs"]:
                     event("alarm", f"Zabbix-alarm: {n} ({h})")
-                    if last_attack["t"] and ("ransomware" in n.lower() or "versleutel" in n.lower()):
+                    if last_attack["t"] and not last_attack.get("detected") and (
+                            "ransomware" in n.lower() or "versleutel" in n.lower()):
+                        last_attack["detected"] = True
                         secs = now() - last_attack["t"]
                         event("measure", f"Detectietijd: {secs/60:.1f} minuten na de start van de aanval (eis E12: < 5 min)")
                 for h, n in prev["probs"] - probs:
@@ -105,7 +109,7 @@ def run_action(rid, action, when):
     args = [action] + (when.split() if when else [])
     event("start", f"Gestart: {ACTIONS[action][2]}" + (f" (moment {when})" if when else ""))
     if action.startswith("attack"):
-        last_attack["t"] = now()
+        last_attack.update(t=now(), detected=False, recovered=False)
     try:
         p = subprocess.Popen(ssh_cmd(host, args), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
         for line in p.stdout:
