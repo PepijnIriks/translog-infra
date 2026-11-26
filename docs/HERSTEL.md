@@ -22,7 +22,7 @@ Noteer bij elke stap de tijd: dat is de meting voor E4 (RTO 4 uur) en E5 (RPO 24
 1. EduCloud > Storage > Backups: kies de back-up van app01 van **vóór de aanval**.
 2. "Restore backup", wacht tot app01 weer draait.
 3. Controleer: http://10.1.51.90/health geeft `"ok": true` en `"versleuteld": 0`.
-4. Data van na de back-up tot de aanval: zet die terug uit backup01 (stap 3, alleen de stappen 3 en 4).
+4. Data van na de back-up tot de aanval: zet die terug uit backup01 (stap 3, alleen stap 3 en stap 6).
 
 ## 3. Herstel zonder instance-back-up: opnieuw opbouwen (manier B, E7)
 
@@ -31,11 +31,15 @@ Gebruik dit als de instance-back-ups weg of besmet zijn.
 1. EduCloud > Instances > app01 > Destroy (Expunge aan).
 2. Add Instance: Ubuntu 24.04, netwerk `productie`, IP **10.20.1.10**, naam `app01`, user data uit
    `bootstrap/userdata-app01.yaml`. Backup-offering weer koppelen.
-3. Op **backup01** (via mon01): `sudo translog-handoff`. app01 haalt zijn back-uplogin dan één keer op.
-4. Wacht tot app01 klaar is (`/var/log/translog-bootstrap.log` op app01, ±10 minuten).
-5. Op **app01**: `sudo translog-restore --list` en daarna
+3. Op **backup01**: zijn er back-upbestanden overschreven door de aanvaller? Kijk eerst:
+   `sudo translog-s3-rollback --before "JJJJ-MM-DD UU:MM"` (tijd van vóór de aanval; verandert niets).
+   Staan er bestanden in de lijst, zet ze terug met hetzelfde commando plus `--doe-het`. Er wordt niets
+   gewist: de oude, vergrendelde versies worden weer de actuele.
+4. Op **backup01**: `sudo translog-handoff`. app01 haalt zijn back-uplogin dan één keer op.
+5. Wacht tot app01 klaar is (`/var/log/translog-bootstrap.log` op app01, ±10 minuten).
+6. Op **app01**: `sudo translog-restore --list` en daarna
    `sudo translog-restore --before "JJJJ-MM-DD UU:MM"` met de tijd van de aanval.
-6. Het script controleert zelf dat er geen `*.locked`-bestanden meer zijn en dat het portaal werkt.
+7. Het script controleert zelf dat er geen `*.locked`-bestanden meer zijn en dat het portaal werkt.
 
 ## 4. Evalueren
 
