@@ -67,12 +67,13 @@
     state: present
 
 # ---- Secrets, made on this server
-- name: Secrets folder
+- name: Secrets folder (seaweed may enter it to read s3.json; secrets.env stays root-only, mode 0600)
   ansible.builtin.file:
     path: /etc/seaweedfs
     state: directory
-    mode: "0700"
+    mode: "0750"
     owner: root
+    group: seaweed
 
 - name: Make the S3 logins and the Kopia repository password (only the first time)
   ansible.builtin.shell: |
