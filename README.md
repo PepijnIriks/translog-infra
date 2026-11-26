@@ -21,8 +21,7 @@ backup01 vormt dat optie 5 uit het Plan van Aanpak.
 ```
             EduCloud-VPN / Fontys-netwerk
                         |
-                 10.53.15.8 (port forwarding)
-        :80 Zabbix  :22 SSH  |  :8080 portaal
+   10.53.15.8 -> mon01 (:22 SSH, :80 Zabbix)  |  10.1.51.90 -> app01 (:80 portaal)
            |                 |        |
    +-------v-------+         |  +-----v--------+   S3 :8333 (alleen app01)   +----------------+
    | mon01 beheer  |-- SSH ---+->| app01        |---------------------------->| backup01       |

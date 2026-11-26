@@ -10,7 +10,7 @@ Noteer bij elke stap de tijd: dat is de meting voor E4 (RTO 4 uur) en E5 (RPO 24
 
 ## 1. Beoordelen en loskoppelen (doel: binnen 15 minuten)
 
-1. Open http://10.53.15.8:8080 (portaal). Zie je "bestanden versleuteld", dan is het een aanval.
+1. Open http://10.1.51.90 (portaal). Zie je "bestanden versleuteld", dan is het een aanval.
 2. Koppel app01 los: zet in EduCloud de ACL van het netwerk `productie` tijdelijk op `default_deny`,
    of stop app01 (Instances > app01 > Stop).
 3. Licht in: IT-beheer, directie, security officer. Bij persoonsgegevens: privacy officer (AVG-meldplicht
@@ -21,7 +21,7 @@ Noteer bij elke stap de tijd: dat is de meting voor E4 (RTO 4 uur) en E5 (RPO 24
 
 1. EduCloud > Storage > Backups: kies de back-up van app01 van **vóór de aanval**.
 2. "Restore backup", wacht tot app01 weer draait.
-3. Controleer: http://10.53.15.8:8080/health geeft `"ok": true` en `"versleuteld": 0`.
+3. Controleer: http://10.1.51.90/health geeft `"ok": true` en `"versleuteld": 0`.
 4. Data van na de back-up tot de aanval: zet die terug uit backup01 (stap 3, alleen de stappen 3 en 4).
 
 ## 3. Herstel zonder instance-back-up: opnieuw opbouwen (manier B, E7)
