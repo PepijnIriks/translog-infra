@@ -2,4 +2,6 @@
 host_firewall:
   - {src: "{{ vpn_cidr }}", port: 22}
   - {src: "{{ vpn_cidr }}", port: 80}
+  - {src: "10.0.0.0/8", port: 22}          # Fontys network
+  - {src: "10.0.0.0/8", port: 80}
   - {src: "10.20.0.0/16", port: 10051}     # Zabbix active checks from the agents
