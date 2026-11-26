@@ -37,6 +37,7 @@ locktest)        only backup01; /usr/local/sbin/translog-locktest ;;
 s3-list)         only backup01; /usr/local/sbin/translog-s3-list --prefix app01/ --max 25 ;;
 rollback-preview) only backup01; time_ok; /usr/local/sbin/translog-s3-rollback --before "$WHEN" ;;
 rollback)        only backup01; time_ok; /usr/local/sbin/translog-s3-rollback --before "$WHEN" --doe-het ;;
+rotate-keys)     only backup01; /usr/local/sbin/translog-rotate-keys ;;
 problems)        only mon01; /usr/local/sbin/translog-zabbix-problems ;;
 *)               echo "unknown action"; exit 2 ;;
 esac

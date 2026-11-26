@@ -143,31 +143,44 @@ def run_action(rid, action, when):
 
 
 # ---------------------------------------------------------------- complete demo with one button
-STEPS = [
-    ("Uitgangssituatie", "We kijken eerst of alles normaal werkt: het portaal draait, er zijn geen versleutelde "
-     "bestanden en Zabbix heeft geen alarmen."),
-    ("Verse back-up (E5)", "app01 maakt nu een back-up van de database en de fileshare. Kopia versleutelt die op app01 "
-     "en zet hem op backup01. Daar wordt elk bestand automatisch 14 dagen vergrendeld (object lock, COMPLIANCE)."),
-    ("Back-ups zijn onaantastbaar (E1)", "Voordat de aanval komt, laten we zien dat de back-ups niet te vernietigen "
-     "zijn: met de sleutel van app01 én als beheerder van backup01 proberen we ze te wissen, te overschrijven en de "
-     "bewaartijd in te korten. Alles moet geweigerd worden."),
-    ("Moment van vóór de aanval vastleggen", "We wachten tot de volgende hele minuut en noteren die tijd. Alles wat "
-     "daarna gebeurt, hoort bij de aanval. Het herstel zet alles terug naar dit moment."),
-    ("De aanval (T1490 + T1486)", "Het testscript doet een echte ransomware-aanval na, op testdata. Stap 1: de "
-     "aanvaller heeft app01 overgenomen en gebruikt de back-upsleutel die daar staat om alle back-ups te wissen en te "
-     "overschrijven. Stap 2: hij versleutelt alle bestanden op de fileshare en laat een losgeldbericht achter."),
-    ("Detectie door Zabbix (E12)", "Zabbix kijkt elke minuut naar de fileshare. We wachten op het alarm. Eis: binnen "
-     "5 minuten na de start van de aanval."),
-    ("Schade aan de back-ups bekijken", "De aanvaller kon niets wissen, maar wel nieuwe versies over back-upbestanden "
-     "schrijven. We kijken welke bestanden dat zijn. De oude versies staan er nog: die zijn vergrendeld."),
-    ("Herstel 1: back-upopslag terugzetten", "Op backup01 maken we de vergrendelde versies van vóór de aanval weer de "
-     "actuele versie. Er wordt niets gewist."),
-    ("Herstel 2: app01 terugzetten (E6)", "app01 haalt de laatste back-up van vóór de aanval op en zet de fileshare en "
-     "de database terug. Zo komen er geen versleutelde bestanden mee terug."),
-    ("Controle en uitslag (E4)", "We controleren of het portaal weer werkt, of er geen versleutelde bestanden meer "
-     "zijn en of het Zabbix-alarm vanzelf verdwijnt. Daarna de gemeten tijden."),
-]
-scenario = {"active": False, "current": -1, "status": [], "results": {}, "stop": False, "rid": None}
+T = {
+    "start": ("Uitgangssituatie", "We kijken eerst of alles normaal werkt: het portaal draait, er zijn geen versleutelde "
+              "bestanden en Zabbix heeft geen alarmen."),
+    "backup": ("Verse back-up (E5)", "app01 maakt nu een back-up van de database en de fileshare. Kopia versleutelt die op "
+               "app01 en zet hem op backup01. Daar wordt elk bestand automatisch 14 dagen vergrendeld (object lock, "
+               "COMPLIANCE)."),
+    "e1": ("Back-ups zijn onaantastbaar (E1)", "Voordat de aanval komt, laten we zien dat de back-ups niet te vernietigen "
+           "zijn: met de sleutel van app01 én als beheerder van backup01 proberen we ze te wissen, te overschrijven en de "
+           "bewaartijd in te korten. Alles moet geweigerd worden."),
+    "moment": ("Moment van vóór de aanval vastleggen", "We wachten tot de volgende hele minuut en noteren die tijd. Alles "
+               "wat daarna gebeurt, hoort bij de aanval. Het herstel zet alles terug naar dit moment."),
+    "attack": ("De aanval (T1490 + T1486)", "Het testscript doet een ransomware-aanval na, op testdata. Stap 1: de "
+               "aanvaller heeft app01 overgenomen en gebruikt de back-upsleutel die daar staat om alle back-ups te wissen "
+               "en te overschrijven. Stap 2: hij versleutelt alle bestanden op de fileshare en laat een losgeldbericht "
+               "achter."),
+    "detect": ("Detectie door Zabbix (E12)", "Zabbix kijkt elke minuut naar de fileshare. We wachten op het alarm. Eis: "
+               "binnen 5 minuten na de start van de aanval."),
+    "isolate": ("Isoleren: app01 uitzetten", "De aanvaller zit nog op app01. Als we nu terugzetten, versleutelt hij alles "
+                "opnieuw. Daarom zetten we app01 eerst uit via EduCloud: vanaf nu kan de aanvaller niets meer."),
+    "rollback": ("Back-upopslag terugzetten", "De aanvaller kon niets wissen, maar wel nieuwe versies over "
+                 "back-upbestanden schrijven. We laten zien welke, en maken de vergrendelde versies van vóór de aanval "
+                 "weer de actuele. Er wordt niets gewist."),
+    "rotate": ("Sleutels vervangen", "De aanvaller heeft de back-upsleutel van app01 gezien. Op backup01 maken we een "
+               "nieuwe sleutel en maken we de oude ongeldig. De nieuwe app01 krijgt de nieuwe sleutel één keer."),
+    "rebuild": ("app01 opnieuw opbouwen (E7)", "We installeren app01 schoon opnieuw vanuit de standaard Ubuntu-image van "
+                "EduCloud. Een eventuele achterdeur van de aanvaller verdwijnt zo. Bij het opstarten haalt de nieuwe "
+                "server de code uit GitHub en richt zichzelf in (± 10 minuten)."),
+    "restore": ("Data terugzetten (E6)", "app01 haalt de laatste back-up van vóór de aanval op en zet de fileshare en de "
+                "database terug. Zo komen er geen versleutelde bestanden mee terug."),
+    "check": ("Controle en uitslag (E4)", "We controleren of het portaal weer werkt, of er geen versleutelde bestanden "
+              "meer zijn en of het Zabbix-alarm verdwenen is. Daarna de gemeten tijden."),
+}
+MODES = {
+    "snel": ["start", "backup", "e1", "moment", "attack", "detect", "rollback", "restore", "check"],
+    "herbouw": ["start", "backup", "e1", "moment", "attack", "detect", "isolate", "rollback", "rotate", "rebuild",
+                "restore", "check"],
+}
+scenario = {"active": False, "mode": "herbouw", "current": -1, "status": [], "results": {}, "stop": False, "rid": None}
 
 
 def h(name):
@@ -176,12 +189,14 @@ def h(name):
 
 def wait_for(cond, timeout, r, every=5, note=None):
     t0 = now()
+    last = 0
     while now() - t0 < timeout:
         if scenario["stop"]:
             return False
         if cond():
             return True
-        if note and int(now() - t0) % 30 < every:
+        if note and now() - last >= 30:
+            last = now()
             emit(r, f"   … {note} ({int(now() - t0)} s)")
         time.sleep(every)
     return False
@@ -194,112 +209,144 @@ def alarm():
     return None
 
 
-def run_scenario(rid):
+def run_scenario(rid, mode):
+    import cloudstack
     r = runs[rid]
     res = scenario["results"]
+    keys = MODES[mode]
     ok = True
 
-    def step(i):
+    def step(key):
         if scenario["stop"]:
             raise RuntimeError("gestopt op verzoek")
+        i = keys.index(key)
         scenario["current"] = i
         scenario["status"][i] = "bezig"
-        title, text = STEPS[i]
+        title, text = T[key]
         emit(r, "")
-        emit(r, f"=== STAP {i + 1} van {len(STEPS)}: {title} ===")
+        emit(r, f"=== STAP {i + 1} van {len(keys)}: {title} ===")
         emit(r, f"   {text}")
         emit(r, "")
         event("start", f"Demo stap {i + 1}: {title}")
+        return i
 
     def done(i, good=True, note=""):
         scenario["status"][i] = "goed" if good else "fout"
         emit(r, f"   >> {'GOED' if good else 'NIET GOED'}{': ' + note if note else ''}")
+        if not good:
+            raise RuntimeError(note or "stap mislukt")
 
     try:
-        # 1
-        step(0)
+        i = step("start")
         a, m = h("app01"), h("mon01")
         health = (a.get("health") or {})
         emit(r, f"   Portaal werkt: {'ja' if health.get('ok') else 'NEE'} · zendingen: {health.get('zendingen')} · "
                 f"bestanden: {a.get('files')} · versleuteld: {a.get('locked')}")
         emit(r, f"   Open Zabbix-alarmen (ernst gemiddeld of hoger): "
                 f"{sum(1 for p in m.get('problems', []) if p.get('severity', 0) >= 3)}")
-        good = bool(health.get("ok")) and a.get("locked") == 0 and alarm() is None
-        done(0, good, "omgeving is gezond" if good else
+        if mode == "herbouw":
+            emit(r, "   Koppeling met EduCloud controleren…")
+            v = cloudstack.vm("app01")
+            emit(r, f"   EduCloud: app01 gevonden ({v['state']}, {v['templatename']})")
+            res["vm_id"] = v["id"]
+        done(i, bool(health.get("ok")) and a.get("locked") == 0 and alarm() is None,
+             "omgeving is gezond" if health.get("ok") and a.get("locked") == 0 and alarm() is None else
              "eerst herstellen (portaal, versleutelde bestanden of open ransomware-alarm) voordat de demo kan starten")
-        if not good:
-            raise RuntimeError("omgeving niet gezond")
-        # 2
-        step(1)
+
+        i = step("backup")
         c = exec_into(r, "backup")
-        done(1, c == 0, "back-up gemaakt en gecontroleerd" if c == 0 else f"back-up mislukt (code {c})")
-        if c != 0:
-            raise RuntimeError("back-up mislukt")
-        # 3
-        step(2)
+        done(i, c == 0, "back-up gemaakt en gecontroleerd" if c == 0 else f"back-up mislukt (code {c})")
+
+        i = step("e1")
         c = exec_into(r, "locktest")
         res["e1"] = c == 0
-        done(2, c == 0, "geen enkele poging gelukt" if c == 0 else "een poging is gelukt")
-        # 4
-        step(3)
+        done(i, c == 0, "geen enkele poging gelukt" if c == 0 else "een poging is gelukt")
+
+        i = step("moment")
         wait = 61 - datetime.datetime.now(TZ).second
         emit(r, f"   We wachten {wait} seconden tot de volgende minuut…")
         time.sleep(wait)
         moment = datetime.datetime.now(TZ).strftime("%Y-%m-%d %H:%M")
         res["moment"] = moment
-        emit(r, f"   Moment van vóór de aanval: {moment}")
-        done(3, True, moment)
+        done(i, True, moment)
         time.sleep(3)
-        # 5
-        step(4)
+
+        i = step("attack")
         t_attack = now()
         res["attack_start"] = t_attack
         exec_into(r, "attack")
-        done(4, True, "aanval uitgevoerd; kijk hierboven: '0 deleted' betekent dat geen back-up gewist kon worden")
-        # 6
-        step(5)
-        got = wait_for(lambda: alarm() is not None, 360, r, note="wachten op het alarm van Zabbix")
-        if got:
+        done(i, True, "aanval uitgevoerd; '0 deleted' hierboven betekent dat geen back-up gewist kon worden")
+
+        i = step("detect")
+        if wait_for(lambda: alarm() is not None, 360, r, note="wachten op het alarm van Zabbix"):
             p = alarm()
-            det = max(0, p["since"] - t_attack)
-            res["detect_s"] = det
+            res["detect_s"] = max(0, p["since"] - t_attack)
             emit(r, f"   Zabbix-alarm: {p['name']} (ernst: {p['severity_name']})")
-            done(5, det < 300, f"gedetecteerd na {det / 60:.1f} minuten (eis: binnen 5 minuten)")
+            done(i, res["detect_s"] < 300, f"gedetecteerd na {res['detect_s'] / 60:.1f} minuten (eis: binnen 5 minuten)")
         else:
-            done(5, False, "geen alarm binnen 6 minuten")
-        # 7
-        step(6)
+            done(i, False, "geen alarm binnen 6 minuten")
+
+        if mode == "herbouw":
+            i = step("isolate")
+            emit(r, "   EduCloud: app01 stoppen…")
+            cloudstack.wait_job(cloudstack.call("stopVirtualMachine", id=res["vm_id"])["jobid"])
+            res["isolated_s"] = now() - t_attack
+            done(i, True, f"app01 staat uit, {res['isolated_s'] / 60:.1f} minuten na de start van de aanval")
+
+        i = step("rollback")
         exec_into(r, "rollback-preview", moment)
-        done(6, True)
-        # 8
-        step(7)
         c = exec_into(r, "rollback", moment)
-        done(7, c == 0, "back-upopslag staat weer zoals vóór de aanval" if c == 0 else f"code {c}")
-        # 9
-        step(8)
+        done(i, c == 0, "back-upopslag staat weer zoals vóór de aanval" if c == 0 else f"code {c}")
+
+        if mode == "herbouw":
+            i = step("rotate")
+            c = exec_into(r, "rotate-keys")
+            done(i, c == 0, "oude sleutel ongeldig, nieuwe klaar voor de nieuwe app01" if c == 0 else f"code {c}")
+
+            i = step("rebuild")
+            emit(r, "   EduCloud: app01 opnieuw installeren vanuit de standaard-image…")
+            job = cloudstack.call("restoreVirtualMachine", virtualmachineid=res["vm_id"])["jobid"]
+            result = cloudstack.wait_job(job)
+            pw = (result.get("virtualmachine") or {}).get("password")
+            emit(r, "   Schone schijf geplaatst. app01 starten…")
+            cloudstack.wait_job(cloudstack.call("startVirtualMachine", id=res["vm_id"])["jobid"])
+            if pw:
+                emit(r, f"   Nieuw console-wachtwoord van app01 (gebruiker ubuntu): {pw}  -> zet het in Bitwarden")
+            subprocess.run(["ssh-keygen", "-R", HOSTS["app01"], "-f", "/opt/translog-demo/.ssh/known_hosts"],
+                           capture_output=True)
+            emit(r, "   app01 richt zichzelf nu in vanuit GitHub (pakketten, portaal, Kopia, Zabbix)…")
+            t_rb = now()
+            ready = wait_for(lambda: h("app01").get("reachable") and (h("app01").get("health") or {}).get("zendingen"),
+                             1800, r, every=10, note="app01 wordt ingericht")
+            res["rebuild_s"] = now() - t_rb
+            done(i, bool(ready), f"nieuwe app01 klaar na {res['rebuild_s'] / 60:.1f} minuten" if ready else
+                 "app01 niet klaar binnen 30 minuten; kijk op app01 in /var/log/translog-bootstrap.log")
+
+        i = step("restore")
         c = exec_into(r, "restore", moment)
-        done(8, c == 0, "fileshare en database teruggezet" if c == 0 else f"herstel mislukt (code {c})")
-        # 10
-        step(9)
+        done(i, c == 0, "fileshare en database teruggezet" if c == 0 else f"herstel mislukt (code {c})")
+
+        i = step("check")
         healthy = wait_for(lambda: (h("app01").get("health") or {}).get("ok") and h("app01").get("locked") == 0,
-                           120, r, note="wachten tot het portaal weer gezond is")
-        t_ok = now()
-        res["recover_s"] = t_ok - t_attack
-        cleared = wait_for(lambda: alarm() is None, 150, r, note="wachten tot Zabbix het alarm opheft")
+                           180, r, note="wachten tot het portaal weer gezond is")
+        res["recover_s"] = now() - t_attack
+        cleared = wait_for(lambda: alarm() is None, 180, r, note="wachten tot Zabbix het alarm opheft")
         a = h("app01")
         emit(r, "")
         emit(r, "=== UITSLAG ===")
         emit(r, f"   E1  back-ups niet te vernietigen ........ {'GEHAALD' if res.get('e1') else 'NIET GEHAALD'}")
-        if "detect_s" in res:
-            emit(r, f"   E12 detectie binnen 5 minuten ........... {res['detect_s'] / 60:.1f} min · "
-                    f"{'GEHAALD' if res['detect_s'] < 300 else 'NIET GEHAALD'}")
+        emit(r, f"   E12 detectie binnen 5 minuten ........... {res.get('detect_s', 0) / 60:.1f} min · "
+                f"{'GEHAALD' if res.get('detect_s', 999) < 300 else 'NIET GEHAALD'}")
+        if mode == "herbouw":
+            emit(r, f"   E7  app01 opnieuw opgebouwd uit code ..... {res['rebuild_s'] / 60:.1f} min · GEHAALD")
         emit(r, f"   E6  geen versleutelde bestanden terug .... {a.get('locked')} over · "
                 f"{'GEHAALD' if a.get('locked') == 0 else 'NIET GEHAALD'}")
         emit(r, f"   E4  hersteltijd (aanval tot werkend portaal) {res['recover_s'] / 60:.1f} min · "
                 f"{'GEHAALD' if healthy and res['recover_s'] < 4 * 3600 else 'NIET GEHAALD'}")
-        emit(r, f"   Zabbix-alarm vanzelf opgeheven: {'ja' if cleared else 'nog niet'}")
-        event("measure", f"Demo klaar: detectie {res.get('detect_s', 0) / 60:.1f} min, herstel {res['recover_s'] / 60:.1f} min")
-        done(9, bool(healthy), "omgeving is hersteld" if healthy else "portaal nog niet gezond")
+        emit(r, f"   Zabbix-alarm opgeheven: {'ja' if cleared else 'nog niet'}")
+        event("measure", f"Demo klaar: detectie {res.get('detect_s', 0) / 60:.1f} min, "
+                         f"herstel {res['recover_s'] / 60:.1f} min")
+        done(i, bool(healthy), "omgeving is hersteld" if healthy else "portaal nog niet gezond")
     except Exception as e:  # noqa: BLE001
         ok = False
         emit(r, f"   DEMO GESTOPT: {e}")
@@ -318,10 +365,13 @@ def api_state():
     running = [{"id": k, "action": v["action"]} for k, v in runs.items() if not v["done"]]
     t = last_attack["t"]
     suggest = datetime.datetime.fromtimestamp(t or now(), TZ).strftime("%Y-%m-%d %H:%M")
+    import cloudstack
+    keys = MODES[scenario["mode"]]
     sc = {"active": scenario["active"], "current": scenario["current"], "rid": scenario["rid"],
-          "results": scenario["results"],
-          "steps": [{"title": t, "text": x, "status": scenario["status"][i] if i < len(scenario["status"]) else ""}
-                    for i, (t, x) in enumerate(STEPS)]}
+          "results": scenario["results"], "mode": scenario["mode"], "cloudstack": cloudstack.configured(),
+          "steps": [{"title": T[k][0], "text": T[k][1],
+                     "status": scenario["status"][i] if i < len(scenario["status"]) else ""}
+                    for i, k in enumerate(keys)]}
     if scenario["active"]:
         running = [{"id": scenario["rid"], "action": "scenario"}]
     return jsonify(state=state, events=events[-60:], running=running, suggest_time=suggest, scenario=sc,
@@ -352,13 +402,20 @@ def api_run():
 
 @app.post("/api/scenario")
 def api_scenario():
+    mode = (request.get_json(silent=True) or {}).get("mode", "snel")
+    if mode not in MODES:
+        return {"error": "onbekende demo"}, 400
+    import cloudstack
+    if mode == "herbouw" and not cloudstack.configured():
+        return {"error": "stel eerst de EduCloud-koppeling in (onderaan de pagina)"}, 400
     with lock:
         if scenario["active"] or any(not v["done"] for v in runs.values()):
             return {"error": "er loopt al iets; wacht tot het klaar is"}, 409
         rid = str(int(now() * 1000))
         runs[rid] = {"action": "scenario", "lines": [], "done": False, "code": None, "started": now(), "q": []}
-        scenario.update(active=True, current=-1, status=[""] * len(STEPS), results={}, stop=False, rid=rid)
-    threading.Thread(target=run_scenario, args=(rid,), daemon=True).start()
+        scenario.update(active=True, mode=mode, current=-1, status=[""] * len(MODES[mode]), results={}, stop=False,
+                        rid=rid)
+    threading.Thread(target=run_scenario, args=(rid, mode), daemon=True).start()
     return {"id": rid}
 
 
@@ -366,6 +423,22 @@ def api_scenario():
 def api_scenario_stop():
     scenario["stop"] = True
     return {"ok": True}
+
+
+@app.post("/api/cloudstack")
+def api_cloudstack():
+    """Stores the EduCloud API key (once). It is checked right away and never sent back."""
+    import cloudstack
+    d = request.get_json(force=True)
+    key, secret = (d.get("apikey") or "").strip(), (d.get("secret") or "").strip()
+    if len(key) < 20 or len(secret) < 20:
+        return {"error": "vul de API key en de secret key in"}, 400
+    cloudstack.save(key, secret)
+    try:
+        v = cloudstack.vm("app01")
+        return {"ok": True, "text": f"Koppeling werkt: app01 gevonden ({v['state']})."}
+    except Exception as e:  # noqa: BLE001
+        return {"error": f"Opgeslagen, maar de test mislukte: {e}"}, 400
 
 
 @app.get("/api/stream/<rid>")

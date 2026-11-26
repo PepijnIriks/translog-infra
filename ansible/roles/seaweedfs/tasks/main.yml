@@ -187,6 +187,12 @@
     dest: /usr/local/sbin/translog-s3-rollback
     mode: "0700"
 
+- name: After an attack - new S3 key for app01, old one made invalid, hand-over opened
+  ansible.builtin.copy:
+    src: rotate_keys.py
+    dest: /usr/local/sbin/translog-rotate-keys
+    mode: "0700"
+
 # ---- One-time hand-over of the back-up login to app01
 - name: Hand-over script
   ansible.builtin.copy:

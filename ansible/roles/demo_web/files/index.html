@@ -69,7 +69,7 @@
   button.groot{font-size:16px;padding:9px 20px}
   .demo-now{margin:12px 0 0;padding:10px 14px;background:#eef4fb;border-left:4px solid #0b5394;display:none}
   .demo-now b{display:block;font-size:16px;margin-bottom:3px}
-  ol.stappen{margin:12px 0 0;padding:0;list-style:none;display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+  ol.stappen{margin:12px 0 0;padding:0;list-style:none;display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
   ol.stappen li{border:1px solid #d5d9e0;padding:6px 8px;font-size:13px;background:#f8f9fb}
   ol.stappen li .n{color:#6b7280;font-size:12px;display:block}
   ol.stappen li.bezig{border-color:#0b5394;background:#eef4fb;font-weight:600}
@@ -98,11 +98,14 @@
   <h2>1. Volledige demo met één knop</h2>
   <div class="demo">
     <div class="demo-head">
-      <button class="groot" id="demo-start">Start volledige demo</button>
+      <button class="groot" id="demo-herbouw">Realistische demo (met herbouw van app01)</button>
+      <button class="groot sec" id="demo-snel">Snelle demo</button>
       <button class="sec" id="demo-stop" style="display:none">Stoppen na deze stap</button>
-      <h3>Aanval en herstel, van begin tot eind (± 6–8 minuten)</h3>
     </div>
-    <p class="small" style="margin:6px 0 0">Doet automatisch: back-up maken, laten zien dat back-ups niet te wissen zijn, de aanval, wachten op het alarm van Zabbix, en het herstel. Bij elke stap staat hieronder wat er gebeurt; de uitvoer van de servers loopt mee in "Uitvoer".</p>
+    <div class="t-body" style="margin-top:10px">
+      <p><b>Realistische demo · ± 20 minuten · 12 stappen</b>Zoals het in het echt moet: na de aanval wordt app01 eerst uitgezet (isoleren), worden de sleutels vervangen en wordt app01 helemaal opnieuw opgebouwd vanuit de code. Pas daarna wordt de data teruggezet. Nodig: de EduCloud-koppeling (onderaan).</p>
+      <p><b>Snelle demo · ± 7 minuten · 9 stappen</b>Dezelfde aanval, maar de data wordt teruggezet op dezelfde app01. Laat de techniek zien; in het echt is dit niet genoeg, omdat de aanvaller dan nog op de server kan zitten.</p>
+    </div>
     <div class="demo-now" id="demo-now"><b id="demo-title"></b><span id="demo-text"></span></div>
     <ol class="stappen" id="stappen"></ol>
     <table class="uitslag" id="uitslag"><thead><tr><th>Eis</th><th>Wat gemeten is</th><th>Resultaat</th></tr></thead><tbody id="uitslag-body"></tbody></table>
@@ -212,6 +215,22 @@
     </li>
   </ol>
 
+
+  <h2>6. EduCloud-koppeling (voor de realistische demo)</h2>
+  <div class="tijd" style="flex-wrap:wrap">
+    <span id="cs-status" class="small">–</span>
+  </div>
+  <div class="step" style="background:#fff;border:1px solid #d5d9e0;padding:10px 14px;font-size:14px">
+    <p style="margin:0 0 8px">Om app01 uit te zetten en opnieuw te installeren, gebruikt deze pagina de EduCloud-API. Maak in EduCloud een sleutel aan
+      (rechtsboven je naam → <b>Profile</b> → <b>Generate keys</b>) en plak de twee waarden hieronder. Ze worden alleen op demo01 bewaard en nooit meer getoond.
+      Let op: met deze sleutel kan alles in je EduCloud-account; maak na het project nieuwe sleutels aan (dan wordt deze ongeldig).</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <input id="cs-key" type="password" placeholder="API key" style="width:320px">
+      <input id="cs-secret" type="password" placeholder="Secret key" style="width:320px">
+      <button id="cs-save">Opslaan en testen</button>
+    </div>
+    <div id="cs-msg" style="margin-top:6px;font-weight:600"></div>
+  </div>
 </div>
 
 <script>
@@ -331,7 +350,10 @@ function renderDemo(sc){
   const cur = sc.steps[sc.current];
   $("#demo-now").style.display = cur ? "block" : "none";
   if(cur){ $("#demo-title").textContent = `Stap ${sc.current+1} van ${sc.steps.length}: ${cur.title}`; $("#demo-text").textContent = cur.text; }
-  $("#demo-start").disabled = !!running;
+  $("#demo-herbouw").disabled = !!running || !sc.cloudstack;
+  $("#demo-herbouw").title = sc.cloudstack ? "" : "Stel eerst de EduCloud-koppeling in (onderaan)";
+  $("#demo-snel").disabled = !!running;
+  $("#cs-status").innerHTML = sc.cloudstack ? '<span class="ok">EduCloud-koppeling is ingesteld.</span>' : '<span class="let">Nog geen EduCloud-koppeling: de realistische demo kan nog niet.</span>';
   $("#demo-stop").style.display = sc.active ? "" : "none";
   if(sc.active && !demoStream) follow(sc.rid, "Volledige demo");
   const r = sc.results || {};
@@ -340,6 +362,7 @@ function renderDemo(sc){
     $("#uitslag-body").innerHTML =
       `<tr><td>E1</td><td>Back-ups wissen of wijzigen, met de sleutel van app01 en als beheerder</td><td class="v">${ja(r.e1)}</td></tr>` +
       (r.detect_s !== undefined ? `<tr><td>E12</td><td>Detectie door Zabbix na de start van de aanval</td><td class="v">${(r.detect_s/60).toFixed(1)} min · ${ja(r.detect_s < 300)}</td></tr>` : "") +
+      (r.rebuild_s !== undefined ? `<tr><td>E7</td><td>app01 schoon opnieuw opgebouwd uit de code in GitHub</td><td class="v">${(r.rebuild_s/60).toFixed(1)} min · ${ja(true)}</td></tr>` : "") +
       `<tr><td>E4</td><td>Hersteltijd: start aanval tot portaal weer werkt</td><td class="v">${(r.recover_s/60).toFixed(1)} min · ${ja(r.recover_s < 14400)}</td></tr>` +
       `<tr><td>E6</td><td>Teruggezet naar het moment vóór de aanval</td><td class="v">${esc(r.moment)}</td></tr>`;
     $("#uitslag").style.display = "table";
@@ -353,13 +376,27 @@ function follow(id, title){
   es.addEventListener("done", ev => { es.close(); if(es === demoStream) demoStream = null; out("--- klaar ---"); refresh(); });
   es.onerror = () => { es.close(); if(es === demoStream) demoStream = null; };
 }
-$("#demo-start").addEventListener("click", async () => {
-  if(!confirm("De volledige demo voert een echte (test)aanval uit op app01 en herstelt daarna alles. Dit duurt 6 tot 8 minuten. Starten?")) return;
-  const res = await fetch("api/scenario", {method:"POST"});
+async function startDemo(mode){
+  const tekst = mode === "herbouw"
+    ? "De realistische demo voert een (test)aanval uit op app01, zet app01 daarna uit, installeert hem opnieuw en zet de data terug. Dit duurt ongeveer 20 minuten. Starten?"
+    : "De snelle demo voert een (test)aanval uit op app01 en zet daarna de data terug. Dit duurt 6 tot 8 minuten. Starten?";
+  if(!confirm(tekst)) return;
+  const res = await fetch("api/scenario", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({mode})});
   const d = await res.json();
   if(!res.ok){ $("#msg").textContent = d.error || "Mislukt"; return; }
   $("#uitslag").style.display = "none";
   follow(d.id, "Volledige demo"); refresh();
+}
+$("#demo-herbouw").addEventListener("click", () => startDemo("herbouw"));
+$("#demo-snel").addEventListener("click", () => startDemo("snel"));
+$("#cs-save").addEventListener("click", async () => {
+  $("#cs-msg").textContent = "Testen…"; $("#cs-msg").className = "";
+  const res = await fetch("api/cloudstack", {method:"POST", headers:{"Content-Type":"application/json"},
+                          body: JSON.stringify({apikey: $("#cs-key").value, secret: $("#cs-secret").value})});
+  const d = await res.json();
+  $("#cs-msg").textContent = d.text || d.error; $("#cs-msg").className = res.ok ? "ok" : "fout";
+  if(res.ok){ $("#cs-key").value = ""; $("#cs-secret").value = ""; }
+  refresh();
 });
 $("#demo-stop").addEventListener("click", () => fetch("api/scenario/stop", {method:"POST"}));
 document.querySelectorAll("button[data-a]").forEach(b => b.addEventListener("click", () => start(b.dataset.a)));

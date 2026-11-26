@@ -35,12 +35,19 @@
     remote_src: true
     mode: "0644"
 
+- name: Private folder for the EduCloud API key (pasted on the website, never in Git)
+  ansible.builtin.file:
+    path: /opt/translog-demo/private
+    state: directory
+    owner: translog-demo
+    mode: "0700"
+
 - name: Website files
   ansible.builtin.copy:
     src: "{{ item }}"
     dest: "/opt/translog-demo/{{ item }}"
     mode: "0644"
-  loop: [app.py, index.html]
+  loop: [app.py, cloudstack.py, index.html]
   notify: Restart translog-demo
 
 - name: Login password for the website (only the first time)

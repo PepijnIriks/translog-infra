@@ -26,7 +26,12 @@ Noteer bij elke stap de tijd: dat is de meting voor E4 (RTO 4 uur) en E5 (RPO 24
 
 ## 3. Herstel zonder instance-back-up: opnieuw opbouwen (manier B, E7)
 
-Gebruik dit als de instance-back-ups weg of besmet zijn.
+De veilige manier na een echte aanval: de aanvaller kan nog op app01 zitten, dus nooit terugzetten op de
+oude server. Gebruik ook de instance-back-ups niet als niet zeker is dat ze van vóór de inbraak zijn.
+De demo-website (knop "Realistische demo") doet deze stappen automatisch.
+
+0. Op **backup01**: `sudo translog-rotate-keys` (nieuwe S3-sleutel voor app01, de oude wordt ongeldig,
+   de overdracht gaat open). Doe dit vóór app01 terugkomt.
 
 1. EduCloud > Instances > app01 > Destroy (Expunge aan).
 2. Add Instance: Ubuntu 24.04, netwerk `productie`, IP **10.20.1.10**, naam `app01`, user data uit
