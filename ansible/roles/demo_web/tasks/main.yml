@@ -1,0 +1,121 @@
+# demo01: demo website with a live view of the environment and buttons for the tests.
+# Reachable at http://10.53.15.8:8080 (VPN), behind a login. The password is made here, in /root/demo-password.txt.
+- name: Packages
+  ansible.builtin.apt:
+    name: [nginx, python3-flask, gunicorn, openssh-client, apache2-utils]
+    state: present
+
+- name: User translog-demo
+  ansible.builtin.user:
+    name: translog-demo
+    system: true
+    shell: /usr/sbin/nologin
+    home: /opt/translog-demo
+    create_home: true
+
+- name: Folder .ssh
+  ansible.builtin.file:
+    path: /opt/translog-demo/.ssh
+    state: directory
+    owner: translog-demo
+    mode: "0700"
+
+- name: Own SSH key of demo01 (made here, never leaves this server; only the public part is published)
+  ansible.builtin.shell: |
+    set -e
+    ssh-keygen -q -t ed25519 -N "" -C "translog-demo@demo01" -f /opt/translog-demo/.ssh/id_ed25519
+    chown translog-demo: /opt/translog-demo/.ssh/id_ed25519 /opt/translog-demo/.ssh/id_ed25519.pub
+  args:
+    creates: /opt/translog-demo/.ssh/id_ed25519
+
+- name: Publish the public key for app01, backup01 and mon01
+  ansible.builtin.copy:
+    src: /opt/translog-demo/.ssh/id_ed25519.pub
+    dest: /var/www/demo-key.pub
+    remote_src: true
+    mode: "0644"
+
+- name: Website files
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/opt/translog-demo/{{ item }}"
+    mode: "0644"
+  loop: [app.py, index.html]
+  notify: Restart translog-demo
+
+- name: Login password for the website (only the first time)
+  ansible.builtin.shell: |
+    set -e
+    [ -s /root/demo-password.txt ] && exit 0
+    umask 077
+    openssl rand -base64 12 > /root/demo-password.txt
+    echo made
+  register: demo_pw
+  changed_when: "'made' in demo_pw.stdout"
+
+- name: Login file for nginx
+  ansible.builtin.shell: htpasswd -ci /etc/nginx/translog-demo.htpasswd demo < /root/demo-password.txt
+  args:
+    creates: /etc/nginx/translog-demo.htpasswd
+
+- name: Rights on the login file
+  ansible.builtin.file:
+    path: /etc/nginx/translog-demo.htpasswd
+    owner: root
+    group: www-data
+    mode: "0640"
+
+- name: Website service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/translog-demo.service
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=TransLog demo website
+      After=network-online.target
+      [Service]
+      User=translog-demo
+      WorkingDirectory=/opt/translog-demo
+      ExecStart=/usr/bin/gunicorn --workers 1 --threads 32 --worker-class gthread --timeout 0 --bind 127.0.0.1:8001 app:app
+      Restart=always
+      [Install]
+      WantedBy=multi-user.target
+  notify: Restart translog-demo
+
+- name: Website runs
+  ansible.builtin.systemd:
+    name: translog-demo
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: nginx in front (login; the public key is open, but only inside the VPC)
+  ansible.builtin.copy:
+    dest: /etc/nginx/sites-available/default
+    mode: "0644"
+    content: |
+      server {
+          listen 80 default_server;
+          server_name _;
+          location = /demo-key.pub {
+              allow 10.20.0.0/16;
+              deny all;
+              root /var/www;
+          }
+          location / {
+              auth_basic "TransLog demo";
+              auth_basic_user_file /etc/nginx/translog-demo.htpasswd;
+              proxy_pass http://127.0.0.1:8001;
+              proxy_http_version 1.1;
+              proxy_buffering off;
+              proxy_read_timeout 3600s;
+              proxy_set_header Host $host;
+          }
+      }
+  register: nginx_conf
+
+- name: Reload nginx
+  ansible.builtin.systemd:
+    name: nginx
+    state: reloaded
+  when: nginx_conf.changed

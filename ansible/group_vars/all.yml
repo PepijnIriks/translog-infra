@@ -9,6 +9,7 @@ repo_branch: main
 app01_ip: 10.20.1.10        # tier "productie"
 mon01_ip: 10.20.2.10        # tier "beheer"
 backup01_ip: 10.20.3.10     # tier "backup"
+demo01_ip: 10.20.2.20       # tier "beheer" (demo website)
 productie_cidr: 10.20.1.0/24
 beheer_cidr: 10.20.2.0/24
 backup_cidr: 10.20.3.0/24

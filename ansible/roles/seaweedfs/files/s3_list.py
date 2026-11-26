@@ -27,11 +27,15 @@ def main():
     ap.add_argument("--bucket", default="translog-backups")
     ap.add_argument("--prefix", default="")
     ap.add_argument("--max", type=int, default=40)
+    ap.add_argument("--summary-json", action="store_true", help="short summary as JSON (demo website)")
     a = ap.parse_args()
     s = secrets()
     s3 = boto3.client("s3", endpoint_url=a.endpoint, aws_access_key_id=s["ADMIN_KEY"],
                       aws_secret_access_key=s["ADMIN_SECRET"], region_name="us-east-1",
                       config=Config(s3={"addressing_style": "path"}))
+
+    if a.summary_json:
+        return summary(s3, a.bucket)
 
     print("== bucket", a.bucket)
     print("versioning :", s3.get_bucket_versioning(Bucket=a.bucket).get("Status"))
@@ -63,6 +67,31 @@ def main():
         print(f'{"latest" if o["IsLatest"] else "old   "}  {o["Key"]}  v={o["VersionId"][:12]}  {lk}')
     for d in v.get("DeleteMarkers", []):
         print(f'DELETE-MARKER  {d["Key"]}')
+
+
+def summary(s3, bucket):
+    import json
+    import time
+    out = {"ok": True, "now": int(time.time())}
+    try:
+        lock = s3.get_object_lock_configuration(Bucket=bucket)["ObjectLockConfiguration"]
+        r = lock.get("Rule", {}).get("DefaultRetention", {})
+        out["lock"] = f"{r.get('Mode')} {r.get('Days')} dagen"
+        out["versioning"] = s3.get_bucket_versioning(Bucket=bucket).get("Status")
+        keys, versions, markers, size, newest = {}, 0, 0, 0, 0
+        for page in s3.get_paginator("list_object_versions").paginate(Bucket=bucket, Prefix="app01/"):
+            for v in page.get("Versions", []):
+                versions += 1
+                size += v["Size"]
+                keys[v["Key"]] = keys.get(v["Key"], 0) + 1
+                newest = max(newest, int(v["LastModified"].timestamp()))
+            markers += len(page.get("DeleteMarkers", []))
+        out.update({"files": len(keys), "versions": versions, "delete_markers": markers,
+                    "overwritten": sum(1 for n in keys.values() if n > 1), "mb": round(size / 1e6, 1),
+                    "newest_write": newest})
+    except Exception as e:  # noqa: BLE001
+        out = {"ok": False, "error": str(e)[:200]}
+    print(json.dumps(out))
 
 
 if __name__ == "__main__":

@@ -25,3 +25,15 @@
   become: true
   roles:
     - zabbix_server
+
+- name: demo01 - demo website (live view + tests)
+  hosts: demo
+  become: true
+  roles:
+    - demo_web
+
+- name: Let demo01 start the fixed demo actions on app01, backup01 and mon01
+  hosts: productie:backup:beheer
+  become: true
+  roles:
+    - demo_agent

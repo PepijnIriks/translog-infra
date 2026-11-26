@@ -1,0 +1,59 @@
+# app01, backup01, mon01: lets the demo website on demo01 start a FIXED list of actions on this server.
+# demo01 logs in with its own SSH key as user "demo"; that key can only run translog-demo-cmd (no shell,
+# no port forwarding), and sudo allows only translog-demo-run. demo01 publishes its public key itself.
+- name: User demo (only for the demo website)
+  ansible.builtin.user:
+    name: demo
+    system: true
+    shell: /bin/sh
+    home: /var/lib/translog-demo
+    create_home: true
+
+- name: Demo scripts
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "/usr/local/sbin/{{ item.dest }}"
+    mode: "0755"
+    owner: root
+  loop:
+    - {src: demo_cmd.sh, dest: translog-demo-cmd}
+    - {src: demo_run.sh, dest: translog-demo-run}
+
+- name: Zabbix problems for the demo website (mon01)
+  ansible.builtin.copy:
+    src: zabbix_problems.py
+    dest: /usr/local/sbin/translog-zabbix-problems
+    mode: "0700"
+  when: inventory_hostname == 'mon01'
+
+- name: sudo - user demo may only start translog-demo-run
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/translog-demo
+    mode: "0440"
+    content: |
+      demo ALL=(root) NOPASSWD: /usr/local/sbin/translog-demo-run
+    validate: visudo -cf %s
+
+- name: Public key of demo01 (published by demo01 itself; skipped when demo01 is not there yet)
+  ansible.builtin.uri:
+    url: "http://{{ demo01_ip }}/demo-key.pub"
+    return_content: true
+    timeout: 5
+  register: demo_key
+  failed_when: false
+
+- name: Folder .ssh of demo
+  ansible.builtin.file:
+    path: /var/lib/translog-demo/.ssh
+    state: directory
+    owner: demo
+    mode: "0700"
+
+- name: demo01 may log in, but only to run translog-demo-cmd
+  ansible.builtin.copy:
+    dest: /var/lib/translog-demo/.ssh/authorized_keys
+    owner: demo
+    mode: "0600"
+    content: |
+      restrict,command="/usr/local/sbin/translog-demo-cmd",from="{{ demo01_ip }}" {{ demo_key.content | trim }}
+  when: demo_key.status | default(0) == 200 and demo_key.content | default('') is match('ssh-ed25519 ')

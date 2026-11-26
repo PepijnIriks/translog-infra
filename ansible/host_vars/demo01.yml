@@ -1,0 +1,4 @@
+# demo01: the demo website, only from the Fontys network / VPN (login required). 10.20.x fetches the public key.
+host_firewall:
+  - {src: "{{ vpn_cidr }}", port: 80}
+  - {src: "10.0.0.0/8", port: 80}

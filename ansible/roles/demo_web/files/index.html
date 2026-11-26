@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TransLog – live demo</title>
+<style>
+  :root{
+    --bg:#0f1420; --panel:#161d2c; --panel2:#1c2538; --line:#2a3550; --text:#e6ebf5; --muted:#8a96b0;
+    --good:#2fbf71; --bad:#ef4b4b; --warn:#f2a93b; --info:#4c8dff; --alarm:#ff6b3d;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+  header{display:flex;align-items:baseline;gap:16px;padding:14px 22px;border-bottom:1px solid var(--line)}
+  header h1{font-size:18px;margin:0;font-weight:650}
+  header .sub{color:var(--muted)}
+  header .clock{margin-left:auto;font-variant-numeric:tabular-nums;color:var(--muted)}
+  main{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(330px,1fr);gap:18px;padding:18px 22px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px}
+  .panel h2{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0;padding:12px 14px;border-bottom:1px solid var(--line)}
+  /* diagram */
+  #diagram{position:relative;padding:22px}
+  #links{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+  .grid{position:relative;display:grid;grid-template-columns:1fr 150px 1fr;grid-template-rows:auto 70px auto;gap:0}
+  .node{background:var(--panel2);border:2px solid var(--line);border-radius:12px;padding:12px 14px;min-height:150px;transition:border-color .4s, box-shadow .4s}
+  .node h3{margin:0 0 2px;font-size:16px;display:flex;align-items:center;gap:8px}
+  .node .role{color:var(--muted);font-size:12px;margin-bottom:8px}
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--muted);display:inline-block}
+  .node.good{border-color:var(--good)} .node.good .dot{background:var(--good)}
+  .node.bad{border-color:var(--bad);box-shadow:0 0 0 4px rgba(239,75,75,.15)} .node.bad .dot{background:var(--bad)}
+  .node.warn{border-color:var(--warn)} .node.warn .dot{background:var(--warn)}
+  .node.busy{box-shadow:0 0 0 4px rgba(76,141,255,.25)}
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;font-size:13px}
+  .kv span:nth-child(odd){color:var(--muted)}
+  .kv b{font-weight:600;font-variant-numeric:tabular-nums}
+  #mon01{grid-column:1 / 4;grid-row:1;justify-self:center;width:min(520px,100%)}
+  #app01{grid-column:1;grid-row:3} #backup01{grid-column:3;grid-row:3}
+  #flow{grid-column:2;grid-row:3;align-self:center;text-align:center;color:var(--muted);font-size:12px;padding:0 6px}
+  #flow .big{font-size:13px;color:var(--text);font-weight:600}
+  .problems{margin:6px 0 0;padding:0;list-style:none;font-size:13px}
+  .problems li{padding:3px 8px;border-radius:6px;margin-top:4px;background:rgba(255,255,255,.04)}
+  .sev5,.sev4{border-left:3px solid var(--bad)} .sev3{border-left:3px solid var(--warn)} .sev2,.sev1,.sev0{border-left:3px solid var(--info)}
+  .none{color:var(--good)}
+  /* flows */
+  .link{stroke:var(--line);stroke-width:2;fill:none}
+  .link.on{stroke-dasharray:8 7;animation:dash .7s linear infinite}
+  .link.blue{stroke:var(--info)} .link.red{stroke:var(--bad)} .link.green{stroke:var(--good)}
+  @keyframes dash{to{stroke-dashoffset:-15}}
+  .link.rev.on{animation-direction:reverse}
+  /* actions */
+  #actions{padding:12px 14px;display:flex;flex-direction:column;gap:12px}
+  .step{border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+  .step h4{margin:0 0 8px;font-size:13px}
+  .step p{margin:0 0 8px;color:var(--muted);font-size:12px}
+  .btns{display:flex;flex-wrap:wrap;gap:8px}
+  button{background:#243150;color:var(--text);border:1px solid #33446b;border-radius:8px;padding:7px 11px;font:inherit;cursor:pointer}
+  button:hover:not(:disabled){background:#2c3c63}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  button.danger{background:#4a1f25;border-color:#7a2d36} button.danger:hover:not(:disabled){background:#5d262e}
+  button.ok{background:#1d4031;border-color:#2b6149} button.ok:hover:not(:disabled){background:#245039}
+  input{background:#0f1420;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 9px;font:inherit;width:150px}
+  label.t{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px;margin-bottom:8px}
+  #msg{min-height:18px;color:var(--warn);font-size:12px}
+  /* console + timeline */
+  .bottom{grid-column:1 / 3;display:grid;grid-template-columns:minmax(0,1.55fr) minmax(330px,1fr);gap:18px}
+  #console{margin:0;padding:12px 14px;height:330px;overflow:auto;font:12.5px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;color:#cfd8ea;white-space:pre-wrap}
+  #console .ok{color:var(--good)} #console .err{color:var(--bad)} #console .info{color:var(--muted)}
+  #timeline{list-style:none;margin:0;padding:8px 14px;height:330px;overflow:auto}
+  #timeline li{display:grid;grid-template-columns:64px 1fr;gap:8px;padding:5px 0;border-bottom:1px dashed var(--line);font-size:13px}
+  #timeline time{color:var(--muted);font-variant-numeric:tabular-nums}
+  #timeline .bad{color:#ff8f8f} #timeline .good{color:#7fe0aa} #timeline .alarm{color:var(--alarm);font-weight:600}
+  #timeline .measure{color:#fff;background:rgba(76,141,255,.15);border-radius:6px;padding:2px 6px;font-weight:600}
+  #timeline .start{color:#a9c4ff}
+  .muted{color:var(--muted)}
+  @media (max-width:1050px){main,.bottom{grid-template-columns:1fr}.bottom{grid-column:1}}
+</style>
+</head>
+<body>
+<header>
+  <h1>TransLog – ransomware-bestendige infrastructuur</h1>
+  <span class="sub">live demo · EduCloud VPC translog</span>
+  <span class="clock" id="clock">–</span>
+</header>
+
+<main>
+  <section class="panel">
+    <h2>Omgeving (ververst elke 5 seconden)</h2>
+    <div id="diagram">
+      <svg id="links"></svg>
+      <div class="grid">
+        <div class="node" id="mon01">
+          <h3><span class="dot"></span>mon01 <span class="muted" style="font-weight:400;font-size:12px">10.20.2.10</span></h3>
+          <div class="role">Beheer · Zabbix-monitoring</div>
+          <div id="mon01-body" class="muted">laden…</div>
+        </div>
+        <div class="node" id="app01">
+          <h3><span class="dot"></span>app01 <span class="muted" style="font-weight:400;font-size:12px">10.20.1.10</span></h3>
+          <div class="role">Productie · portaal, database, fileshare, Kopia</div>
+          <div id="app01-body" class="muted">laden…</div>
+        </div>
+        <div id="flow"><div class="big" id="flow-text">S3 :8333</div><div id="flow-sub">alleen app01 → backup01</div></div>
+        <div class="node" id="backup01">
+          <h3><span class="dot"></span>backup01 <span class="muted" style="font-weight:400;font-size:12px">10.20.3.10</span></h3>
+          <div class="role">Back-up · SeaweedFS met object lock</div>
+          <div id="backup01-body" class="muted">laden…</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Tests starten</h2>
+    <div id="actions">
+      <div class="step">
+        <h4>1 · Normale situatie</h4>
+        <p>Een back-up maken en controleren dat de back-ups niet te wissen zijn (E1).</p>
+        <div class="btns">
+          <button data-a="backup">Back-up nu</button>
+          <button data-a="locktest">Test E1: back-ups wissen</button>
+          <button data-a="s3-list">Bekijk bucket</button>
+        </div>
+      </div>
+      <div class="step">
+        <h4>2 · Aanval (testscript, alleen testdata)</h4>
+        <p>T1490: back-ups wissen/overschrijven met de gestolen sleutel. T1486: fileshare versleutelen. Zabbix moet binnen 5 minuten alarm geven (E12).</p>
+        <div class="btns">
+          <button class="danger" data-a="attack">Start aanval (T1490 + T1486)</button>
+          <button class="danger" data-a="attack-encrypt">Alleen versleutelen</button>
+        </div>
+      </div>
+      <div class="step">
+        <h4>3 · Herstel (E6/E7)</h4>
+        <label class="t">Moment vóór de aanval <input id="when" placeholder="JJJJ-MM-DD UU:MM"></label>
+        <div class="btns">
+          <button data-a="rollback-preview">1a · Wat is overschreven?</button>
+          <button class="ok" data-a="rollback">1b · Back-upbestanden terugzetten</button>
+          <button data-a="restore-list">Snapshots</button>
+          <button class="ok" data-a="restore">2 · Data terugzetten op app01</button>
+        </div>
+      </div>
+      <div id="msg"></div>
+    </div>
+  </section>
+
+  <div class="bottom">
+    <section class="panel">
+      <h2 id="console-title">Uitvoer</h2>
+      <pre id="console"><span class="info">Kies een test. De uitvoer verschijnt hier live.</span></pre>
+    </section>
+    <section class="panel">
+      <h2>Tijdlijn en metingen</h2>
+      <ul id="timeline"></ul>
+    </section>
+  </div>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const hhmm = t => new Date(t*1000).toLocaleTimeString("nl-NL",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
+const ago = t => { if(!t) return "–"; const m = Math.round((Date.now()/1000 - t)/60); return m < 1 ? "net" : m < 60 ? m+" min geleden" : Math.round(m/60)+" uur geleden"; };
+let running = null, whenTouched = false, actions = {};
+
+setInterval(() => $("#clock").textContent = new Date().toLocaleString("nl-NL"), 1000);
+
+function setNode(id, cls){ const n = $("#"+id); n.classList.remove("good","bad","warn"); if(cls) n.classList.add(cls); }
+function kv(rows){ return '<div class="kv">' + rows.map(([k,v]) => `<span>${esc(k)}</span><b>${v}</b>`).join("") + "</div>"; }
+
+function render(d){
+  const h = d.state.hosts || {};
+  // app01
+  const a = h.app01 || {};
+  if(!a.reachable){ setNode("app01","warn"); $("#app01-body").innerHTML = '<span class="muted">niet bereikbaar vanaf demo01</span>'; }
+  else{
+    const hl = a.health || {}, bad = a.locked > 0 || hl.ok === false;
+    setNode("app01", bad ? "bad" : (a.backup_status === "0" ? "good" : "warn"));
+    $("#app01-body").innerHTML = kv([
+      ["Portaal", hl.ok ? '<span style="color:var(--good)">gezond</span>' : '<span style="color:var(--bad)">NIET gezond</span>'],
+      ["Zendingen in database", (hl.zendingen ?? "–").toLocaleString("nl-NL")],
+      ["Bestanden fileshare", a.files],
+      ["Versleuteld (*.locked)", a.locked > 0 ? `<span style="color:var(--bad)">${a.locked}</span>` : "0"],
+      ["Laatste back-up", a.backup_status === "0" ? "gelukt" : `<span style="color:var(--warn)">code ${esc(a.backup_status||"?")}</span>`],
+      ["Laatste geslaagde", ago(+a.backup_last_ok)],
+    ]);
+  }
+  // backup01
+  const b = h.backup01 || {};
+  if(!b.reachable || b.ok === false){ setNode("backup01","warn"); $("#backup01-body").innerHTML = `<span class="muted">${esc(b.error || "niet bereikbaar")}</span>`; }
+  else{
+    setNode("backup01", b.overwritten > 0 ? "warn" : "good");
+    $("#backup01-body").innerHTML = kv([
+      ["Object lock", esc(b.lock)], ["Versiebeheer", esc(b.versioning)],
+      ["Back-upbestanden", b.files], ["Versies (vastgezet)", b.versions],
+      ["Met nieuwere versie", b.overwritten > 0 ? `<span style="color:var(--warn)">${b.overwritten}</span>` : "0"],
+      ["Opslag", b.mb + " MB"], ["Laatst geschreven", ago(b.newest_write)],
+    ]);
+  }
+  // mon01
+  const m = h.mon01 || {};
+  if(!m.reachable || m.ok === false){ setNode("mon01","warn"); $("#mon01-body").innerHTML = `<span class="muted">${esc(m.error || "niet bereikbaar")}</span>`; }
+  else{
+    const p = m.problems || [];
+    setNode("mon01", p.some(x => x.severity >= 4) ? "bad" : p.length ? "warn" : "good");
+    $("#mon01-body").innerHTML = `<div class="kv"><span>Gemonitorde servers</span><b>${(m.hosts||[]).length}</b><span>Open problemen</span><b>${p.length}</b></div>` +
+      (p.length ? '<ul class="problems">' + p.slice(0,5).map(x => `<li class="sev${x.severity}">${esc(x.name)} <span class="muted">· ${esc(x.host)} · ${hhmm(x.since)}</span></li>`).join("") + "</ul>"
+                : '<div class="none" style="margin-top:6px">Geen problemen</div>');
+  }
+  // timeline
+  $("#timeline").innerHTML = d.events.slice().reverse().map(e => `<li><time>${hhmm(e.t)}</time><span class="${esc(e.kind)}">${esc(e.text)}</span></li>`).join("");
+  // running action -> flows and buttons
+  const r = d.running[0];
+  running = r ? r.action : null;
+  document.querySelectorAll("button[data-a]").forEach(btn => btn.disabled = !!running);
+  ["app01","backup01","mon01"].forEach(id => $("#"+id).classList.toggle("busy", !!(r && d.actions[r.action] && d.actions[r.action].host === id)));
+  flows(running);
+  if(!whenTouched) $("#when").value = d.suggest_time;
+  actions = d.actions;
+}
+
+const FLOW = {
+  "backup": ["blue", false, "Back-up", "versleuteld → backup01"],
+  "attack": ["red", false, "AANVAL T1490", "gestolen sleutel → backup01"],
+  "locktest": ["red", false, "Test E1", "wissen/wijzigen proberen"],
+  "rollback": ["green", false, "Terugzetten", "oude versies weer actueel"],
+  "restore": ["green", true, "Herstel", "backup01 → app01"],
+};
+function flows(act){
+  const f = FLOW[act];
+  const l = $("#l-main");
+  if(!l) return;
+  l.setAttribute("class", "link" + (f ? " on " + f[0] + (f[1] ? " rev" : "") : ""));
+  $("#flow-text").textContent = f ? f[2] : "S3 :8333";
+  $("#flow-sub").textContent = f ? f[3] : "alleen app01 → backup01";
+}
+
+function drawLinks(){
+  const svg = $("#links"), box = $("#diagram").getBoundingClientRect();
+  const r = id => { const b = $("#"+id).getBoundingClientRect(); return {x:b.left-box.left, y:b.top-box.top, w:b.width, h:b.height}; };
+  const a = r("app01"), b = r("backup01"), m = r("mon01");
+  const y = a.y + a.h/2;
+  svg.innerHTML =
+    `<path id="l-main" class="link" d="M${a.x+a.w} ${y} L${b.x} ${y}"/>` +
+    `<path class="link" d="M${a.x+a.w/2} ${a.y} L${a.x+a.w/2} ${m.y+m.h/2} L${m.x} ${m.y+m.h/2}" stroke-dasharray="3 5"/>` +
+    `<path class="link" d="M${b.x+b.w/2} ${b.y} L${b.x+b.w/2} ${m.y+m.h/2} L${m.x+m.w} ${m.y+m.h/2}" stroke-dasharray="3 5"/>`;
+  flows(running);
+}
+addEventListener("resize", drawLinks);
+
+async function refresh(){
+  try{ const d = await (await fetch("api/state")).json(); render(d); drawLinks(); }
+  catch(e){ $("#msg").textContent = "Geen verbinding met de demo-server"; }
+}
+
+function out(line){
+  const c = $("#console"), s = document.createElement("span");
+  s.className = /FOUT|ERROR|failed|NIET|refused|GELUKT -/i.test(line) && !/geweigerd/i.test(line) ? "err" : /\[OK|gelukt|GEHAALD|code 0|SAFE|Klaar/i.test(line) ? "ok" : "";
+  s.textContent = line + "\n"; c.appendChild(s); c.scrollTop = c.scrollHeight;
+}
+
+async function start(action){
+  $("#msg").textContent = "";
+  const a = actions[action] || {};
+  if(action.startsWith("attack") && !confirm("Dit start het aanvalstestscript op app01: de testbestanden worden versleuteld en er wordt geprobeerd de back-ups te vernietigen. Doorgaan?")) return;
+  if(action === "restore" && !confirm(`Fileshare en database van app01 terugzetten naar de laatste back-up vóór ${$("#when").value}?`)) return;
+  const res = await fetch("api/run", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({action, when: $("#when").value})});
+  const d = await res.json();
+  if(!res.ok){ $("#msg").textContent = d.error || "Mislukt"; return; }
+  $("#console").innerHTML = ""; $("#console-title").textContent = "Uitvoer – " + (a.label || action);
+  running = action; flows(action); refresh();
+  const es = new EventSource("api/stream/" + d.id);
+  es.onmessage = ev => out(JSON.parse(ev.data));
+  es.addEventListener("done", ev => { es.close(); out("── klaar (code " + ev.data + ") ──"); refresh(); });
+  es.onerror = () => { es.close(); refresh(); };
+}
+
+document.querySelectorAll("button[data-a]").forEach(b => b.addEventListener("click", () => start(b.dataset.a)));
+$("#when").addEventListener("input", () => whenTouched = true);
+refresh(); setInterval(refresh, 3000);
+</script>
+</body>
+</html>
