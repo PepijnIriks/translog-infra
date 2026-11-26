@@ -27,6 +27,7 @@ DB=$(pick /var/backups/translog)
 echo "Restoring fileshare from snapshot $FS and database from snapshot $DB"
 
 systemctl stop translog-portal
+trap 'systemctl start translog-portal' EXIT      # the portal always comes back, also when a step fails
 # Fileshare: replace everything with the snapshot
 find /srv/fileshare -mindepth 1 -delete
 kopia snapshot restore "$FS" /srv/fileshare
@@ -35,7 +36,8 @@ setfacl -R -m u:zabbix:rX -m d:u:zabbix:rX /srv/fileshare
 
 # Database: restore the dump
 kopia snapshot restore "$DB" /var/backups/translog/restore
-sudo -u postgres pg_restore --clean --if-exists -d translog /var/backups/translog/restore/translog.dump
+# root reads the dump and pipes it in: postgres may not open /var/backups/translog (root only, mode 0700)
+sudo -u postgres pg_restore --clean --if-exists -d translog < /var/backups/translog/restore/translog.dump
 rm -rf /var/backups/translog/restore
 systemctl start translog-portal
 sleep 3
